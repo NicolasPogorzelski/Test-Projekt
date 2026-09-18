@@ -9,9 +9,13 @@ compliance claim).
 |---|---|---|---|
 | SSH key-only, root login disabled after admin user exists | no password brute force | `/etc/ssh/sshd_config.d/` | A.8.5 secure authentication |
 | Hetzner Cloud Firewall: inbound 22, 80, 443, 2222 only | reduce exposed surface before the host | Hetzner console | A.8.20 network security |
-| unattended-upgrades incl. Docker origin | timely security patches | `/etc/apt/apt.conf.d/50unattended-upgrades` | A.8.8 technical vulnerabilities |
+| unattended-upgrades enabled for Debian origins (daily timers) | timely security patches from Debian | `/etc/apt/apt.conf.d/20auto-upgrades`, `50unattended-upgrades` (package default) | A.8.8 technical vulnerabilities |
 | Docker CE repository key scoped with `Signed-By` | limit reach of the third-party key | `/etc/apt/sources.list.d/docker.sources` | A.8.19 software installation |
-| `userns-remap` | container root is unprivileged on the host | `/etc/docker/daemon.json` | A.8.22 segregation |
+| `userns-remap` | container root is unprivileged on the host | `/etc/docker/daemon.json` | A.8.9 configuration management |
+| Docker used via `sudo`; no `docker` group membership; read-only sudoers rule for unattended checks | `docker` group is root-equivalent without password or audit trail | `/etc/sudoers.d/docker-readonly` | A.8.2 privileged access rights, A.8.15 logging |
+| apt pin `5:29.*` for Docker packages + Docker origin in unattended-upgrades | automatic security patches, manual major upgrades | `/etc/apt/preferences.d/docker-ce`, `/etc/apt/apt.conf.d/52unattended-upgrades-docker` | A.8.8 technical vulnerabilities |
+| Container log rotation (10 MB × 3 per container), `live-restore` | a full disk stops every service; daemon restarts must not stop containers | `/etc/docker/daemon.json` | A.8.6 capacity management |
+| AppArmor default profile and seccomp builtin profile (Debian defaults, confirmed in `docker info`) | syscall and file-access confinement for every container | Docker defaults on Debian | A.8.9 configuration management |
 
 ## Containers
 | Measure | Why | Where |

@@ -68,3 +68,21 @@ Debian 13, Docker CE from the Docker repository, rootful daemon with
 - Fallback: if `userns-remap` costs more than one hour on day 1, it is
   disabled and the decision is recorded as reverted.
 - Rootless Docker remains the next hardening step for a production setup.
+
+## Addendum: `docker` group vs. `sudo`
+The Docker socket is owned by root and the `docker` group; members of that
+group can start containers with arbitrary host mounts and are therefore
+root-equivalent without a password prompt and without a `sudo` audit entry
+(Docker: "Docker daemon attack surface"; CIS Docker Benchmark, host
+configuration). The admin user is deliberately **not** added to the group.
+Docker is used via `sudo`, which keeps a second factor (the sudo password,
+stored only in the password manager) between a stolen SSH key and root, and
+logs every privileged action.
+
+For unattended read-only checks (monitoring, tooling, restricted operators) a
+minimal sudoers rule allows exactly `docker ps`, `docker ps -a`,
+`docker info`, `docker images`, `docker logs <container>` and
+`docker compose ls` without a password (`/etc/sudoers.d/docker-readonly`,
+created with `visudo -f`). `docker inspect` (would reveal environment
+variables) and `docker exec` are intentionally excluded; anything that
+changes state still requires the password.
