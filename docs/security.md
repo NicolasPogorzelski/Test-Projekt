@@ -16,6 +16,7 @@ compliance claim).
 | apt pin `5:29.*` for Docker packages + Docker origin in unattended-upgrades | automatic security patches, manual major upgrades | `/etc/apt/preferences.d/docker-ce`, `/etc/apt/apt.conf.d/52unattended-upgrades-docker` | A.8.8 technical vulnerabilities |
 | Container log rotation (10 MB × 3 per container), `live-restore` | a full disk stops every service; daemon restarts must not stop containers | `/etc/docker/daemon.json` | A.8.6 capacity management |
 | AppArmor default profile and seccomp builtin profile (Debian defaults, confirmed in `docker info`) | syscall and file-access confinement for every container | Docker defaults on Debian | A.8.9 configuration management |
+| Repository on the host is cloned with a **read-only deploy key** (one SSH key, bound to this repository only, no passphrase because `git pull` runs unattended) | a compromised host can read this repository and nothing else; no personal key on the server | GitHub → Settings → Deploy keys; `~/.ssh/config` on the host | A.8.2 privileged access rights |
 
 ## Containers
 | Measure | Why | Where |
@@ -24,7 +25,8 @@ compliance claim).
 | no `ports:` except Caddy and GitLab SSH | backends unreachable from outside | every `compose.yaml` |
 | per-stack internal networks | DBs unreachable from other stacks | every `compose.yaml` |
 | `cap_drop: [ALL]`, `security_opt: [no-new-privileges:true]`, `read_only` where possible | limit what a compromised process can do | every `compose.yaml` (exceptions documented) |
-| non-root images where available (Caddy, lldap) | — | — |
+| Caddy: `user: 1000:1000`, `cap_drop: ALL` + `cap_add: NET_BIND_SERVICE` (the binary's file capability, see P-005), `read_only`, `no-new-privileges`, `admin off`, HTTP/3 off | the only Internet-facing process runs with one capability and a read-only filesystem | `proxy/compose.yaml`, `proxy/Caddyfile` |
+| non-root images where available (lldap) | — | — |
 | resource limits (`mem_limit`) | one runaway container cannot starve the host | — |
 
 ## Transport
