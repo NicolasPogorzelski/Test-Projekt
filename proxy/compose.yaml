@@ -4,10 +4,10 @@ services:
     container_name: caddy
     restart: unless-stopped              # survives reboots, respects manual stop
     user: "1000:1000"                    # non-root in the container -> host UID 101000
-    sysctls:
-      - net.ipv4.ip_unprivileged_port_start=0   # lets UID 1000 bind 80/443, this netns only
     cap_drop:
-      - ALL                              # no kernel capabilities at all
+      - ALL                              # drop every kernel capability ...
+    cap_add:
+      - NET_BIND_SERVICE                 # ... except the file capability on the caddy binary (exec fails without it)
     security_opt:
       - no-new-privileges:true           # no setuid escalation
     read_only: true                      # root fs read-only; only volumes and tmpfs writable
