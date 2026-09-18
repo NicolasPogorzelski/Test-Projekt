@@ -35,8 +35,11 @@ scripts/         bootstrap.sh (host preparation), backup.sh, restore.sh
 > workstation with `openssl`, `ssh` and `git`.
 
 1. **Workstation:** clone this repository, create the CA and the service
-   certificates (`pki/`), add the `*.lab.test` names to `/etc/hosts`, import
-   `pki/ca.crt` into your browser.
+   certificates (`pki/make-ca.sh`, `pki/issue-cert.sh` — see
+   [`pki/README.md`](pki/README.md)), add the `*.lab.test` names to
+   `/etc/hosts`, import `pki/ca.crt` into your browser and verify its
+   fingerprint:
+   `SHA256 A7:08:31:80:94:29:B9:64:81:47:C3:83:9F:D3:55:04:AE:37:06:FD:81:9A:0D:AB:A7:9B:3E:3D:38:97:49:B0`
 2. **Host:** run `scripts/bootstrap.sh` (installs Docker CE, creates `/srv`, the
    shared Docker network and the `userns-remap` configuration).
 3. Copy `.env.example` to `.env` in each stack directory and fill in secrets.
