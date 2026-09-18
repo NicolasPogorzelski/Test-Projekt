@@ -113,7 +113,9 @@ proxy stack is set up — see `proxy/README.md`.
    (the script refuses to overwrite an existing certificate on purpose).
 2. `./pki/issue-cert.sh <host>` — a new key pair and certificate are created.
 3. Copy to the host as above; restore the owner of the key file.
-4. Reload Caddy: `sudo docker compose -f proxy/compose.yaml exec caddy caddy reload --config /etc/caddy/Caddyfile`.
+4. Restart Caddy: `sudo docker compose -f ~/Test-Projekt/proxy/compose.yaml restart caddy`
+   (the admin API is disabled in the Caddyfile, so `caddy reload` is unavailable; a restart
+   costs about one second, once a year).
 5. Check: `openssl s_client -connect <host>:443 -servername <host> </dev/null 2>/dev/null | openssl x509 -noout -dates`.
 
 ## Importing the CA on a workstation
