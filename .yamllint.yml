@@ -1,0 +1,11 @@
+# yamllint configuration, used by .github/workflows/lint.yml and locally.
+extends: default
+
+rules:
+  line-length:
+    max: 120          # compose files carry explanatory comments
+  document-start: disable   # no mandatory "---"
+  truthy:
+    check-keys: false       # GitHub Actions uses the key "on:"
+  comments:
+    min-spaces-from-content: 2

@@ -1,0 +1,46 @@
+name: Lint
+
+# Static checks that catch mistakes before they reach the host:
+# shellcheck for scripts, yamllint for YAML, and "docker compose config" for
+# every stack. Linters come from the runner's distribution, so the only
+# third-party action is the pinned checkout.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Install linters from the runner's distribution
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck yamllint
+
+      - name: shellcheck every tracked shell script
+        run: |
+          files="$(git ls-files '*.sh')"
+          if [ -z "$files" ]; then echo "no shell scripts yet"; exit 0; fi
+          # shellcheck disable=SC2086
+          shellcheck --severity=warning $files
+
+      - name: yamllint every tracked YAML file
+        run: yamllint --strict .
+
+      - name: Validate every compose file
+        run: |
+          set -e
+          found=0
+          for f in $(git ls-files 'proxy/compose.yaml' 'services/*/compose.yaml'); do
+            found=1
+            echo "== $f"
+            docker compose -f "$f" --env-file .env.example config --quiet
+          done
+          if [ "$found" = 0 ]; then echo "no compose files yet"; fi
