@@ -56,3 +56,9 @@ as a non-root process inside the container.
   `X-Content-Type-Options`, `Referrer-Policy`) are set at the proxy; CSP is
   left to the applications, which ship their own.
 - Git over SSH bypasses the proxy (host port 2222 → GitLab container).
+- `admin off` disables the admin API; certificate renewal or Caddyfile changes
+  therefore need `docker compose restart caddy` (about one second) instead of
+  `caddy reload`. Accepted: less surface, and changes are rare.
+- The official image carries the file capability `cap_net_bind_service=ep` on
+  the binary; with `cap_drop: ALL` the container must `cap_add:
+  NET_BIND_SERVICE` or the process cannot even be executed (P-005).

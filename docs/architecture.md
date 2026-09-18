@@ -2,14 +2,17 @@
 
 ## Components
 
-| Component | Image (pinned version) | Role | Internal port |
-|---|---|---|---|
-| Caddy | `caddy:<TBD>` | reverse proxy, TLS termination | 8080/8443 (published 80/443) |
-| GitLab CE | `gitlab/gitlab-ce:<TBD>-ce.0` | source code, CI/CD | 80 (HTTP), 22 (SSH, published 2222) |
-| XWiki | `xwiki:<TBD>-postgres-tomcat` | documentation | 8080 |
-| OpenProject | `openproject/openproject:<TBD>` | project management | 80 |
-| lldap | `lldap/lldap:<TBD>` | LDAP directory + web UI | 3890 (LDAP), 17170 (web) |
-| PostgreSQL ×2 | `postgres:<TBD>` | databases for XWiki and OpenProject | 5432 (internal only) |
+| Component | Image (pinned) | Why this tag | Role | Internal port |
+|---|---|---|---|---|
+| Caddy | `caddy:2.11.4-alpine` | current 2.x; Alpine variant = small image | reverse proxy, TLS termination | 80/443 (published) |
+| GitLab CE | `gitlab/gitlab-ce:19.4.0-ce.0` | current minor at build time; CE = pure open source (ADR-0004) | source code, CI/CD | 80 (HTTP), 22 (SSH, published as 2222) |
+| XWiki | `xwiki:17.10.13-postgres-tomcat` | **LTS** branch: longer fix support; the branch extensions are typically tested against | documentation | 8080 |
+| OpenProject | `openproject/openproject:<TBD>` | tag scheme to be checked when the stack is built | project management | 80 |
+| lldap | `lldap/lldap:v0.6.3` | current release | LDAP directory + web UI | 3890 (LDAP), 17170 (web) |
+| PostgreSQL ×2 | `postgres:17.11-alpine` | OpenProject requires PostgreSQL ≥ 16 (system requirements); XWiki's official compose example initialises the DB with the PostgreSQL 17 `builtin` locale provider, which 16 lacks; 17 is maintained until late 2029 | databases for XWiki and OpenProject | 5432 (internal only) |
+
+Tags were taken from the Docker Hub API on 2026-09-18. Every tag is exact
+(`x.y.z`), never `latest`, so a rebuild reproduces the same versions.
 
 ## Networks
 
@@ -61,12 +64,16 @@ Internet ──► Hetzner Cloud Firewall (22, 80, 443, 2222) ──► host
 
 ## What Caddy does implicitly
 
-_TBD — verify each item against the Caddy documentation and link the section:_
+Verified against the Caddy documentation on 2026-09-18 and against the running
+proxy (`curl --resolve … --cacert ca.crt`):
 
-- Automatic HTTP → HTTPS redirect for every site block with a hostname.
-- TLS defaults (protocol versions, cipher suites, curves).
-- `X-Forwarded-For`, `X-Forwarded-Proto`, `X-Forwarded-Host` set on
-  `reverse_proxy` requests; `Host` passed through.
-- WebSocket upgrade passed through by `reverse_proxy`.
-- Not set automatically: HSTS and other security headers (set explicitly in
-  the Caddyfile).
+| Behaviour | Source | Note |
+|---|---|---|
+| HTTP → HTTPS redirect (308) on port 80 for every site with a hostname | [Automatic HTTPS](https://caddyserver.com/docs/automatic-https) | confirmed: `curl http://git.lab.test/` → `308 → https://git.lab.test/` |
+| No ACME because `tls <cert> <key>` supplies certificates | [tls directive](https://caddyserver.com/docs/caddyfile/directives/tls) | log: "skipping automatic certificate management because … certificates are already loaded" |
+| `reverse_proxy` sets `X-Forwarded-For`, `X-Forwarded-Proto`, `X-Forwarded-Host` and passes `Host` through unchanged | [reverse_proxy directive, section "Headers"](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy) | this is the header contract every backend relies on |
+| Upstream connections are plaintext HTTP when only `host:port` is given | same page | backends terminate no TLS themselves |
+| WebSocket upgrade is proxied automatically | same page | needed by GitLab |
+| Protocols default to `h1 h2 h3`; restricted here to `h1 h2` | [Global options, "servers"](https://caddyserver.com/docs/caddyfile/options) | HTTP/3 would need UDP/443 published and allowed; deliberately off (see P-006) |
+| Admin API on `localhost:2019` by default; disabled here with `admin off` | [Global options, "admin"](https://caddyserver.com/docs/caddyfile/options) | consequence: no `caddy reload`; configuration changes need a container restart |
+| Security headers are **not** set by default | [header directive](https://caddyserver.com/docs/caddyfile/directives/header) | set explicitly in the `hardened` snippet; CSP left to the applications |
