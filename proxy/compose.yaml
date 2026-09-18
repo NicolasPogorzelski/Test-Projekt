@@ -1,0 +1,34 @@
+services:
+  caddy:
+    image: caddy:2.11.4-alpine          # pinned; alpine = small image
+    container_name: caddy
+    restart: unless-stopped              # survives reboots, respects manual stop
+    user: "1000:1000"                    # non-root in the container -> host UID 101000
+    sysctls:
+      - net.ipv4.ip_unprivileged_port_start=0   # lets UID 1000 bind 80/443, this netns only
+    cap_drop:
+      - ALL                              # no kernel capabilities at all
+    security_opt:
+      - no-new-privileges:true           # no setuid escalation
+    read_only: true                      # root fs read-only; only volumes and tmpfs writable
+    tmpfs:
+      - /tmp
+    ports:
+      - "80:80"                          # HTTP -> HTTPS redirect only
+      - "443:443"                        # the single TLS entry point
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - /srv/proxy/certs:/certs:ro
+      - /srv/proxy/data:/data
+      - /srv/proxy/config:/config
+    networks:
+      edge:
+        aliases:                         # hairpin: containers reach the proxy by public names
+          - git.lab.test
+          - wiki.lab.test
+          - pm.lab.test
+          - ldap.lab.test
+
+networks:
+  edge:
+    external: true                       # created by bootstrap, shared by all stacks

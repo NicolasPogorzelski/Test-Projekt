@@ -1,0 +1,39 @@
+{
+      admin off
+      servers {
+              protocols h1 h2
+      }
+}
+
+(hardened) {
+      header {
+              Strict-Transport-Security "max-age=31536000"
+              X-Content-Type-Options "nosniff"
+              Referrer-Policy "strict-origin-when-cross-origin"
+              -Server
+      }
+}
+
+git.lab.test {
+      import hardened
+      tls /certs/git.lab.test.crt /certs/git.lab.test.key
+      reverse_proxy gitlab:80
+}
+
+wiki.lab.test {
+      import hardened
+      tls /certs/wiki.lab.test.crt /certs/wiki.lab.test.key
+      reverse_proxy xwiki:8080
+}
+
+pm.lab.test {
+      import hardened
+      tls /certs/pm.lab.test.crt /certs/pm.lab.test.key
+      reverse_proxy openproject:80
+}
+
+ldap.lab.test {
+      import hardened
+      tls /certs/ldap.lab.test.crt /certs/ldap.lab.test.key
+      reverse_proxy lldap:17170
+}
