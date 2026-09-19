@@ -59,19 +59,25 @@ address.
   P-010, where the application chowned the mounted file).
 
 ### 4. Heap and memory limit
-- **Decision: `JAVA_OPTS=-Xmx1536m`, `mem_limit: 2560m`.** The JVM
+- **Decision: `JAVA_OPTS=-Xmx1536m`, `mem_limit` 2.5 GiB (raised to 3 GiB after measuring, below).** The JVM
   reserves the heap up to `-Xmx` and never returns it; the image default
   is 1 GiB, XWiki's minimum. Extension installation (LDAP, today) and Solr
   indexing are the peaks. The container needs roughly heap + 1 GiB for
   metaspace, threads and the embedded Solr, so the limit must exceed the
   heap by that margin or the kernel kills the container while Java still
-  believes it has room. Measured after the first start (README).
+  believes it has room.
+- **Measured 2026-09-19** after the flavor installation and the LDAP
+  extensions: 2.18 GiB — 87 % of the initial 2.5 GiB limit, so the limit
+  was raised to 3 GiB (heap unchanged). Host total with all stacks running:
+  roughly 9 GiB of 16.
 
-### 5. LDAP authenticator: extension, 30-minute time-box
-- Installed through the Extension Manager (`LDAP Authenticator`,
-  xwiki-contrib), configured in the admin UI with `svc-xwiki` and the
-  `wiki_user` group — the OpenProject procedure. If the time-box expires
-  it becomes an extension step.
+### 5. LDAP authenticator: extensions plus `xwiki.cfg`, 30-minute time-box
+- Two extensions (`ldap-authenticator`, `ldap-ui`) through the Extension
+  Manager, the authenticator activated with one `xwiki.cfg` line kept in
+  the data volume (the only way in this version), configured in the admin
+  UI with `svc-xwiki` and the `wiki_user` group. Took ~45 minutes instead
+  of 30 because of the three-part set-up (P-012); accepted, because the
+  cause was understood and the remaining steps were mechanical.
 
 ## Consequences
 - `XWIKI_DB_PASSWORD` must be hex (`openssl rand -hex 24`): it is placed in
@@ -82,3 +88,8 @@ address.
 - Two host-side artefacts exist outside the repository and are part of the
   reinstall: `/srv/xwiki/cacerts` (regenerable from `pki/ca.crt`) and the
   data volume.
+- Verified 2026-09-19: root with `capdrop=[ALL]` starts and serves, the
+  database runs non-root and read-only, `keytool -list` inside the
+  container shows `lab-test-root-ca` with the CA's fingerprint, redirects
+  through Caddy carry `https://` (RemoteIpValve), LDAP sign-in works with
+  the `wiki_user` filter (P-012 for what it took).

@@ -176,3 +176,32 @@ Chronological. Format: symptom → verification → cause → fix / decision.
   Self-calls now go through Caddy with TLS — which also exercises the CA in
   `trusted-certs/`. Lesson: never give a container the hostname that the
   reverse proxy answers for.
+
+## P-012 — XWiki LDAP: installed, configured, and still "Invalid credentials"
+- **Symptom:** after installing the `LDAP Authenticator` extension and
+  filling the LDAP form, both a member and a non-member of `wiki_user` were
+  refused with "Invalid credentials".
+- **Verification:** `docker logs xwiki` showed only
+  `Authentication failure with login [alice]` — no line mentioning LDAP,
+  no bind, no search. The LDAP admin section itself displayed "LDAP
+  authentication is not enabled. Please set LDAP as authentication service
+  in xwiki.cfg".
+- **Cause:** three separate parts are needed and only one was in place:
+  (1) the authenticator extension (logic), (2) the `LDAP Application`
+  extension (`org.xwiki.contrib.ldap:ldap-ui`, the admin form — it does not
+  appear in the default extension search and had to be installed by id via
+  *Advanced search*), and (3) the activation of the authenticator as
+  XWiki's authentication service, which in this version is only possible
+  through `xwiki.cfg`
+  (`xwiki.authentication.authclass=org.xwiki.contrib.ldap.XWikiLDAPAuthServiceImpl`).
+  Without (3) XWiki keeps checking its own user table and never contacts
+  the directory.
+- **Fix:** the image's entrypoint copies a `xwiki.cfg` found in the
+  permanent directory (`/srv/xwiki/data/data/xwiki.cfg` on the host) into
+  `WEB-INF` on every start ("Synchronizing config file xwiki.cfg..."), so
+  the line lives in the data volume and survives container recreation and
+  backups. After the restart the log showed LDAP traffic; `alice` was
+  accepted, `bob` refused. A `WARN … Abusive modification of the cached
+  document` on the first LDAP sign-in is the 9.x authenticator touching a
+  cached document in a way XWiki 17 flags but tolerates. Lesson: "extension
+  installed" is not "extension active" — the log said so before the UI did.

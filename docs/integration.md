@@ -41,7 +41,28 @@ refused. Note: OpenProject requires first and last name — lldap users need
 onboarding).
 
 ### XWiki
-_TBD: LDAP Authenticator extension / LDAP Application._
+Two extensions from xwiki-contrib (`ldap-authenticator` = logic,
+`ldap-ui` = admin form), the authenticator activated with one line in
+`xwiki.cfg` (`xwiki.authentication.authclass=org.xwiki.contrib.ldap.XWikiLDAPAuthServiceImpl`,
+kept in the permanent directory so the entrypoint applies it on every
+start), then Administration → Other → LDAP: server `lldap`, port 3890,
+bind `uid=svc-xwiki,ou=people,dc=lab,dc=test`, base `ou=people,dc=lab,dc=test`,
+restrict to group `cn=wiki_user,ou=groups,dc=lab,dc=test`, UID `uid`,
+fields `givenName`/`sn`/`mail`, local login kept as fallback for `admin`.
+Registration and anonymous reading are denied, so LDAP is the only entry for
+non-admins. Full steps: `services/xwiki/README.md`.
+
+Verified 2026-09-19: sign-in as `alice` (member of `wiki_user`) created her
+profile, sign-in as `bob` (no group) was refused. Diagnostics that got
+there: without the `xwiki.cfg` line the log showed plain
+`Authentication failure` and no LDAP traffic at all — the authenticator was
+installed but not the active auth service.
+
+### Summary
+All three services authenticate against the same lldap directory with a
+read-only bind user each and one access group each (`git_user`, `pm_user`,
+`wiki_user`); every integration was verified with a member and a
+non-member. On-/offboarding is one place: `services/lldap/README.md`.
 
 ## 2. GitLab ↔ OpenProject
 Native integration (OpenProject ≥ 13.4, Community Edition):

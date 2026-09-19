@@ -14,9 +14,10 @@ in [`docs/architecture.md`](../../docs/architecture.md).
 
 ## Host prerequisites
 ```
-/srv/xwiki/data/     owner 100000 (container root)         -> /usr/local/xwiki (attachments, Solr index, config copies)
-/srv/xwiki/db/       owner 100070 (postgres user 70)       -> /var/lib/postgresql/data
-/srv/xwiki/cacerts   root 644, built below                 -> JVM trust store (image cacerts + lab.test CA)
+/srv/xwiki/data/            owner 100000 (container root)   -> /usr/local/xwiki (permanent directory)
+/srv/xwiki/data/data/xwiki.cfg  owner 100000, mode 640      XWiki configuration override, copied into WEB-INF on every start (see LDAP)
+/srv/xwiki/db/              owner 100070 (postgres user 70) -> /var/lib/postgresql/data
+/srv/xwiki/cacerts          root 644, built below           -> JVM trust store (image cacerts + lab.test CA)
 ```
 Directories by `scripts/bootstrap.sh`; networks `edge`/`ldap` exist
 (bootstrap), `xwiki_internal` is created by this stack.
@@ -45,22 +46,44 @@ manager), install the default flavor ("XWiki Standard Flavor"), wait for the
 extensions to install (several minutes).
 
 ## After the wizard (admin)
-1. Registration off: Administration (wiki) → *Users & Rights* → *Rights*:
-   for the *Guest*/unregistered users deny **Register**; alternatively
-   Administration → *Registration* → disable. Verify: logged out,
-   `/xwiki/bin/register/XWiki/XWikiRegister` must not offer a form.
-2. LDAP (30-minute time-box, ADR-0013 §5): Administration → *Extensions* →
-   search **LDAP Authenticator** (xwiki-contrib) → install (globally).
-   Then Administration → *LDAP*:
-   - Host `lldap`, Port `3890`, no SSL
-   - Bind DN `uid=svc-xwiki,ou=people,dc=lab,dc=test`, password of
-     `svc-xwiki`
-   - Base DN `ou=people,dc=lab,dc=test`, user filter / UID attribute `uid`
-   - Group membership required: `cn=wiki_user,ou=groups,dc=lab,dc=test`
-   - Field mapping: `first_name=givenName,last_name=sn,email=mail`
-   - Keep local authentication as fallback so `admin` stays usable.
+1. Registration and anonymous reading off: Administration → *Users &
+   Rights* → *Rights* → tab **Users** → row *Unregistered Users*: click
+   **Register** until it shows deny (✗); tick *Prevent unregistered users
+   from viewing pages* and *… from editing pages*. On the *Registration*
+   page set "Who should be allowed to create new user accounts" to
+   *Closed* if offered. Verify, logged out:
+   `/bin/register/XWiki/XWikiRegister` and `/bin/view/Main/` both redirect
+   to the login page.
+2. LDAP (ADR-0013 §5) — three parts, all needed:
+   1. **Two extensions.** Administration → *Extensions*: install **LDAP
+      Authenticator** (`org.xwiki.contrib.ldap:ldap-authenticator`, the
+      logic) *and* **LDAP Application** (`org.xwiki.contrib.ldap:ldap-ui`,
+      the admin form). The second one does not show up in the default
+      search — use *Advanced search* with the id and version (9.16.6).
+   2. **Activate the authenticator** — a `xwiki.cfg` line, no UI for it in
+      this version (the LDAP section shows "LDAP authentication is not
+      enabled" until it is set). The entrypoint copies a `xwiki.cfg` found
+      in the permanent directory into `WEB-INF` on every start:
+      ```
+      sudo docker cp xwiki:/usr/local/tomcat/webapps/ROOT/WEB-INF/xwiki.cfg /srv/xwiki/data/data/xwiki.cfg
+      echo 'xwiki.authentication.authclass=org.xwiki.contrib.ldap.XWikiLDAPAuthServiceImpl' | sudo tee -a /srv/xwiki/data/data/xwiki.cfg
+      sudo chown 100000:100000 /srv/xwiki/data/data/xwiki.cfg && sudo chmod 640 /srv/xwiki/data/data/xwiki.cfg
+      sudo docker compose restart xwiki      # log: "Synchronizing config file xwiki.cfg..."
+      ```
+      That file is now part of the data volume (and of the backup).
+   3. **Configure** — Administration → *Other* → *LDAP*
+      (`?section=LDAP`): Ldap = Yes, server `lldap`, port `3890`,
+      login matching `uid=svc-xwiki,ou=people,dc=lab,dc=test` + its
+      password, restrict to group `cn=wiki_user,ou=groups,dc=lab,dc=test`,
+      base DN `ou=people,dc=lab,dc=test`, UID attribute `uid`, *Try local
+      login* Yes (keeps `admin` usable), update user after login Yes,
+      user fields mapping `first_name`→`givenName`, `last_name`→`sn`,
+      `email`→`mail`. Save.
    Add `alice` to `wiki_user` in lldap; sign in as `alice` (works), as
-   `bob` (refused).
+   `bob` (refused). The log shows a `WARN … Abusive modification of the
+   cached document [xwiki:XWiki.alice()]` on the first LDAP sign-in — a
+   known incompatibility warning of the 9.x authenticator with XWiki 17,
+   tolerated by the platform; the profile is created and the login works.
 
 ## Verification (evidence for docs/security.md)
 ```
@@ -83,3 +106,10 @@ sudo docker stats --no-stream --format '{{.Name}} {{.MemUsage}}' xwiki xwiki-db
   change), `up -d`; XWiki migrates its data on start.
 - Backup: `pg_dump` from `xwiki-db` + `/srv/xwiki/data` + `.env` +
   `/srv/xwiki/cacerts` (regenerable) — ADR-0008, day 3.
+
+Results on 2026-09-19 (first build): started on the first attempt with
+`cap_drop: ALL` as root; db 70:70 read-only with all capabilities dropped;
+no published port; `keytool -list` shows `lab-test-root-ca` with the CA's
+SHA-256 fingerprint; redirects are `https://`; memory 2.18 GiB after the
+flavor and LDAP extensions (limit raised to 3 GiB), db 63 MiB. LDAP sign-in
+verified with a member and a non-member (`docs/integration.md`, P-012).

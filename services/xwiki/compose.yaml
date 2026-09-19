@@ -46,7 +46,7 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
-    mem_limit: 2560m                             # JVM heap 1.5 GiB + metaspace/Solr/threads (ADR-0013)
+    mem_limit: 3g                                # heap 1.5 GiB + metaspace/Solr/threads, measured 2.18 GiB (ADR-0013)
     environment:
       DB_HOST: db
       DB_DATABASE: xwiki

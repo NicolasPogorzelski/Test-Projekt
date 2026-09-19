@@ -28,13 +28,13 @@ The files named in "Where" are what the script writes.
 ## Containers
 | Measure | Why | Where | Status |
 |---|---|---|---|
-| pinned image versions | reproducibility, deliberate upgrades | every `compose.yaml` | done (proxy, gitlab, lldap, openproject), planned (xwiki) |
-| no `ports:` except Caddy and GitLab SSH | backends unreachable from outside | every `compose.yaml` | done (proxy, gitlab, lldap, openproject), planned (xwiki) |
-| per-stack internal networks | DBs unreachable from other stacks | `services/openproject/compose.yaml` (`openproject_internal`, `internal: true` for db and cache) | done (openproject), planned (xwiki) |
-| `cap_drop: [ALL]`, `security_opt: [no-new-privileges:true]`, `read_only` where possible | limit what a compromised process can do | every `compose.yaml` (exceptions documented) | done (proxy, lldap, openproject db + cache with all three; openproject web/worker: `no-new-privileges`, non-root); gitlab: `no-new-privileges` only, no `cap_drop` — Omnibus needs root and user switching, exception recorded in ADR-0010; planned (xwiki) |
+| pinned image versions | reproducibility, deliberate upgrades | every `compose.yaml` | done |
+| no `ports:` except Caddy and GitLab SSH | backends unreachable from outside | every `compose.yaml` | done |
+| per-stack internal networks | DBs unreachable from other stacks | `openproject_internal` (db, cache), `xwiki_internal` (db) — both `internal: true` | done |
+| `cap_drop: [ALL]`, `security_opt: [no-new-privileges:true]`, `read_only` where possible | limit what a compromised process can do | every `compose.yaml` (exceptions documented) | done: proxy, lldap, both PostgreSQL and memcached with all three; openproject web/worker non-root with `no-new-privileges`; xwiki as root but with `cap_drop: ALL` (image needs root, needs no capability — ADR-0013); gitlab `no-new-privileges` only (Omnibus needs root and user switching, ADR-0010) |
 | Caddy: `user: 1000:1000`, `cap_drop: ALL` + `cap_add: NET_BIND_SERVICE` (the binary's file capability, see P-005), `read_only`, `no-new-privileges`, `admin off`, HTTP/3 off | the only Internet-facing process runs with one capability and a read-only filesystem | `proxy/compose.yaml`, `proxy/Caddyfile` | done |
 | non-root images where available (lldap) | no root inside the container at all | `services/lldap/compose.yaml` (`-rootless` image, `user: 1000:1000`, `cap_drop: ALL`, `read_only`) | done (lldap); Caddy runs non-root too |
-| resource limits (`mem_limit`) | one runaway container cannot starve the host | `services/gitlab/compose.yaml` (8 GiB, ADR-0010), lldap 256 MB, openproject web 2 GiB / worker 1.5 GiB / db 1 GiB / cache 128 MB | done (gitlab, lldap, openproject), planned (xwiki) |
+| resource limits (`mem_limit`) | one runaway container cannot starve the host | gitlab 8 GiB (ADR-0010), lldap 256 MB, openproject web 3 GiB / worker 1.5 GiB / db 1 GiB / cache 128 MB (ADR-0012), xwiki 2.5 GiB with a 1.5 GiB JVM heap / db 1 GiB (ADR-0013) | done |
 
 ## Transport
 | Measure | Why | Status |
@@ -47,11 +47,12 @@ The files named in "Where" are what the script writes.
 ## Applications
 | Measure | Where | Status |
 |---|---|---|
-| sign-up disabled | GitLab (admin settings, verified: `/users/sign_up` redirects to sign-in), OpenProject (self-registration disabled; LDAP is the only entry for non-admins), XWiki | done (GitLab, OpenProject), planned (XWiki) |
+| sign-up disabled; XWiki additionally denies anonymous reading | GitLab (admin settings, verified: `/users/sign_up` redirects to sign-in), OpenProject (self-registration disabled), XWiki (Register and View denied for unregistered users — both URLs redirect to login); LDAP is the only entry for non-admins everywhere | done |
 | 2FA enforced for admins, Admin Mode (re-authentication for the admin area), no password authentication for Git over HTTPS (tokens only) | GitLab admin settings (`services/gitlab/README.md`) | done |
-| per-service read-only LDAP bind users (`lldap_strict_readonly`); per-service access groups (`git_user`, `wiki_user`, `pm_user`) | lldap; GitLab `user_filter` and OpenProject LDAP filter each verified with a member and a non-member | done (directory, GitLab, OpenProject), planned (XWiki) |
+| per-service read-only LDAP bind users (`lldap_strict_readonly`); per-service access groups (`git_user`, `wiki_user`, `pm_user`) | lldap; GitLab, OpenProject and XWiki each verified with a member and a non-member of their group | done |
 | lldap web UI behind an additional Caddy `basic_auth` gate (independent credential, hash outside the repository); LDAP port never published | the directory is the root of trust for all services and has neither MFA nor login rate limiting; before production: forward-auth with MFA or admin-network restriction (ADR-0011) | `proxy/Caddyfile`, `/srv/proxy/config/ldap-ui.auth` | done |
 | unused GitLab subsystems disabled (registry, Pages, KAS, Prometheus, outgoing mail) | `GITLAB_OMNIBUS_CONFIG` in `services/gitlab/compose.yaml`; verified with `gitlab-ctl status` | done |
+| proxy headers trusted only from the Docker address pool: GitLab `real_ip`, Tomcat `RemoteIpValve` for XWiki | correct client IP in logs and per-IP limits, https links behind the proxy; a forged `X-Forwarded-For` from the Internet is ignored (verified on GitLab) | `services/gitlab/compose.yaml`, `services/xwiki/tomcat/server.xml` | done (residual risk: neighbour containers, ADR-0010 §3) |
 
 ## Secrets and data
 See ADR-0009 and ADR-0008: `.env` outside git, gitleaks pre-commit,
@@ -104,6 +105,14 @@ matters, why it was deferred, and where the decision is recorded.
    network; LDAPS would add certificate handling in every client. — ADR-0006.
 9. **Content-Security-Policy in GitLab** (off by default, sent as an empty
    header); application setting, needs testing against the UI. — P-007.
+   **XWiki session IDs in URLs** (`;jsessionid=` on redirects, URL
+   rewriting for cookie-less clients): disable in Tomcat's `context.xml`
+   (`disableURLRewriting`) so session IDs never land in logs or referrers.
+   **XWiki read-only root filesystem**: possible with tmpfs for Tomcat's
+   `work/`, `temp/`, `logs/` — untested. — ADR-0013.
+   **Offboarding automation for XWiki**: the `LDAP user cleanup` extension
+   removes profiles of users deleted from LDAP; only after the offboarding
+   policy decides whether profiles are deleted or kept (audit trail).
 10. **Rootless Docker**, **intermediate CA**, **central log collection and
     alerting**: production-grade measures outside the scope of a
     single-host lab. — ADR-0002, ADR-0007.
