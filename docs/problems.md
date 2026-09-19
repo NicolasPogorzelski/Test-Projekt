@@ -126,3 +126,24 @@ Chronological. Format: symptom → verification → cause → fix / decision.
   the remap and the unmapped store is never populated. Lesson: configuration
   files take effect when the process starts, not when they are written —
   put them in place before the first start.
+
+## P-010 — GitLab `reconfigure` fails on a bind-mounted CA certificate
+- **Symptom:** first start of the GitLab container aborts with
+  `Errno::EROFS: Read-only file system @ apply2files -
+  /etc/gitlab/trusted-certs/ca.crt` (`certificate_helper.rb`,
+  `update_permissions`). `pki/ca.crt` had been bind-mounted read-only from
+  the repository clone into `/etc/gitlab/trusted-certs/`.
+- **Verification:** the Chef trace shows the failing step is
+  `link_certificates → update_permissions`, i.e. a `chown`/`chmod` on the
+  certificate file itself, before the rehash symlink is created.
+- **Cause:** Omnibus normalises owner and mode of every file in
+  `trusted-certs/`. That is impossible on a read-only mount, and would also
+  fail on a read-write mount because the file on the host belongs to the
+  admin user — an unmapped UID under `userns-remap`, which no process in the
+  container may `chown`.
+- **Fix:** no mount. The certificate is copied into the volume with the
+  container's root UID: `install -o 100000 -g 100000 -m 644 pki/ca.crt
+  /srv/gitlab/config/trusted-certs/ca.crt` (documented as a first-start step
+  in `services/gitlab/README.md`). The copy travels with the volume in
+  backups, so a restore needs no extra step. Lesson: a bind mount is the
+  wrong tool for a file the application wants to own.

@@ -54,7 +54,8 @@ services:
       - /srv/gitlab/config:/etc/gitlab
       - /srv/gitlab/logs:/var/log/gitlab
       - /srv/gitlab/data:/var/opt/gitlab
-      - ../../pki/ca.crt:/etc/gitlab/trusted-certs/ca.crt:ro   # lab.test CA for outbound TLS (webhooks, LDAPS later)
+      # pki/ca.crt is copied into /srv/gitlab/config/trusted-certs/ (README), not
+      # bind-mounted: reconfigure chowns/chmods the file, which fails on a mount (P-010)
     networks:
       - edge                             # reached by Caddy
       - ldap                             # reaches lldap (phase 6); internal, no exposure

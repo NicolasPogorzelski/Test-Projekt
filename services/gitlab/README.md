@@ -19,8 +19,9 @@ hardening, resources).
 `100000` = container root under `userns-remap` (ADR-0002); Omnibus chowns the
 per-service subdirectories to its own users (`git`, `gitlab-psql`, …), which
 land at 100000 + UID on the host. Created by `scripts/bootstrap.sh`.
-`pki/ca.crt` is bind-mounted read-only from the repository clone into
-`/etc/gitlab/trusted-certs/`.
+`pki/ca.crt` is copied into `trusted-certs/` with that owner (first-start step
+below). It is not bind-mounted: `reconfigure` sets owner and mode on every file
+in that directory, which fails on a mount (`docs/problems.md` P-010).
 
 Networks `edge` (reached by Caddy) and `ldap` (reaches lldap) exist before the
 stack starts (bootstrap). The only published port is `2222` (Git over SSH);
@@ -28,6 +29,7 @@ HTTP is reachable only through Caddy as `gitlab:80`.
 
 ## First start
 ```
+sudo install -o 100000 -g 100000 -m 644 ~/Test-Projekt/pki/ca.crt /srv/gitlab/config/trusted-certs/ca.crt
 cd ~/Test-Projekt/services/gitlab
 sudo docker compose config --quiet          # interpolation and schema check, no daemon needed
 sudo docker compose up -d

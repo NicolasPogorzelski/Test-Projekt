@@ -82,6 +82,10 @@ container root *is* host root); the consequence is ours to implement. It is
 implemented in `scripts/bootstrap.sh` (owner table: `gitlab/*` → 100000,
 including `config/trusted-certs`, which `reconfigure` writes rehash symlinks
 into) rather than as a runbook step, so a reinstall cannot forget it.
+The CA certificate is *copied* into `trusted-certs/` with owner 100000, not
+bind-mounted from the repository: `reconfigure` chowns and chmods every file
+there, which is impossible on a read-only mount and, on a read-write mount,
+on a file owned by an unmapped host UID (P-010).
 
 ### 5. Initial root password
 - **Options:** (a) `GITLAB_ROOT_PASSWORD` from `.env`; (b) let GitLab generate
