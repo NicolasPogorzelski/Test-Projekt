@@ -1,0 +1,66 @@
+services:
+  gitlab:
+    image: gitlab/gitlab-ce:19.4.0-ce.0   # pinned; CE = pure open source (ADR-0004)
+    container_name: gitlab               # DNS name the proxy uses: reverse_proxy gitlab:80
+    hostname: git.lab.test
+    restart: unless-stopped
+    shm_size: "256m"                     # bundled PostgreSQL needs shared memory (GitLab docs)
+    mem_limit: 8g                        # an OOM kills a GitLab process, not a neighbour (ADR-0010)
+    security_opt:
+      - no-new-privileges:true           # no privilege gain via setuid binaries; root may still drop privileges
+    # No cap_drop: Omnibus starts ~15 services as root and switches users per
+    # service (SETUID/SETGID/CHOWN/...). A minimal capability list is an
+    # extension step, see ADR-0010. Isolation comes from userns-remap (ADR-0002).
+    environment:
+      GITLAB_OMNIBUS_CONFIG: |
+        # Evaluated on every start before /etc/gitlab/gitlab.rb (which stays the untouched template).
+        external_url 'https://git.lab.test'
+
+        # TLS terminates at Caddy (ADR-0005); the bundled NGINX serves plain HTTP on 80.
+        gitlab_rails['nginx']['listen_port'] = 80
+        gitlab_rails['nginx']['listen_https'] = false
+        gitlab_rails['nginx']['hsts_max_age'] = 0            # HSTS is set by Caddy
+        letsencrypt['enable'] = false                        # would auto-enable with an https external_url
+
+        # Full header set (overriding replaces the whole hash), plus the two the
+        # proxy setup needs so Rails treats requests as HTTPS (CSRF, redirects).
+        gitlab_rails['nginx']['proxy_set_headers'] = {
+          "Host" => "$$http_host_with_default",
+          "X-Real-IP" => "$$remote_addr",
+          "X-Forwarded-For" => "$$proxy_add_x_forwarded_for",
+          "X-Forwarded-Proto" => "https",
+          "X-Forwarded-Ssl" => "on",
+          "Upgrade" => "$$http_upgrade",
+          "Connection" => "$$connection_upgrade"
+        }
+
+        # Real client IP in logs and per-IP rate limits: trust X-Forwarded-For
+        # only from the Docker address pool (the proxy lives there). ADR-0010.
+        gitlab_rails['nginx']['real_ip_trusted_addresses'] = ['172.16.0.0/12']
+        gitlab_rails['nginx']['real_ip_header'] = 'X-Forwarded-For'
+        gitlab_rails['nginx']['real_ip_recursive'] = 'on'
+
+        # Git over SSH is published on host port 2222 (host sshd keeps 22).
+        gitlab_rails['gitlab_shell_ssh_port'] = 2222
+
+        # Unused subsystems off: smaller attack surface and memory footprint.
+        registry['enable'] = false
+        gitlab_pages['enable'] = false
+        prometheus_monitoring['enable'] = false
+        gitlab_rails['gitlab_email_enabled'] = false         # no mail server in scope
+    ports:
+      - "2222:22"                        # the only published backend port
+    volumes:
+      - /srv/gitlab/config:/etc/gitlab
+      - /srv/gitlab/logs:/var/log/gitlab
+      - /srv/gitlab/data:/var/opt/gitlab
+      - ../../pki/ca.crt:/etc/gitlab/trusted-certs/ca.crt:ro   # lab.test CA for outbound TLS (webhooks, LDAPS later)
+    networks:
+      - edge                             # reached by Caddy
+      - ldap                             # reaches lldap (phase 6); internal, no exposure
+
+networks:
+  edge:
+    external: true                       # created by bootstrap, shared by all stacks
+  ldap:
+    external: true
