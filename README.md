@@ -63,12 +63,15 @@ setup, certificate renewal, upgrade procedure, backup/restore._
 
 ## Tooling and use of AI assistance
 
-This project was built with the help of an LLM-based coding assistant (Claude Code),
-used for research (locating and summarising official documentation), for reviewing
-configuration files, and for drafting documentation. All configuration files and
-scripts were written by hand by the author; every decision recorded in the ADRs was
-made and can be explained by the author. No credentials or private keys were ever
-shared with the assistant.
+This project was built with the help of an LLM-based coding assistant (Claude Code).
+It was used for research (locating and summarising official documentation), for
+explaining concepts and commands, for reviewing configuration, and for drafting the
+documentation in `docs/`. Configuration files and scripts were typed and reviewed
+line by line by the author, following the official documentation and the
+assistant's guidance; every line and every decision recorded in the ADRs can be
+explained by the author. Documentation drafts were reviewed before each commit.
+No credentials or private keys were ever shared with the assistant, and every
+commit was made by the author.
 
 ## License
 
