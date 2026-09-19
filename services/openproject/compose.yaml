@@ -1,0 +1,131 @@
+# OpenProject CE, "slim" image with one container per role (ADR-0012):
+# web (Puma), worker (background jobs), seeder (one-off schema load/migrate),
+# cache (memcached), db (PostgreSQL 17). No cron (ADR-0012), no autoheal
+# (would need the Docker socket), no openproject/proxy (Caddy talks to Puma).
+
+x-app: &app
+  image: openproject/openproject:16.6.10-slim   # pinned; slim = application only, runs as UID 1000
+  security_opt:
+    - no-new-privileges:true
+  environment:
+    RAILS_ENV: production
+    OPENPROJECT_HTTPS: "true"                    # TLS terminates at Caddy; secure cookies, https links
+    OPENPROJECT_HOST__NAME: pm.lab.test
+    OPENPROJECT_HSTS: "false"                    # HSTS is set by Caddy (ADR-0005)
+    RAILS_CACHE_STORE: memcache
+    OPENPROJECT_CACHE__MEMCACHE__SERVER: cache:11211
+    RAILS_MIN_THREADS: 4
+    RAILS_MAX_THREADS: 16
+    # hex-only secrets from services/openproject/.env: a "/" or "+" would break the URL
+    DATABASE_URL: "postgres://openproject:${OPENPROJECT_DB_PASSWORD:?set in .env}@db/openproject\
+      ?pool=20&encoding=unicode&reconnect=true"
+    SECRET_KEY_BASE: ${OPENPROJECT_SECRET_KEY_BASE:?set in .env}   # signs sessions/tokens; part of every backup
+    SSL_CERT_FILE: /etc/ssl/certs/lab-ca.crt    # outbound TLS to git.lab.test / wiki.lab.test (D5.9)
+  volumes:
+    - ../../pki/ca.crt:/etc/ssl/certs/lab-ca.crt:ro   # read-only is fine here: nothing chowns it
+
+services:
+  db:
+    image: postgres:17.11-alpine                 # OpenProject 16 requires PostgreSQL >= 16
+    container_name: openproject-db
+    restart: unless-stopped
+    user: "70:70"                                # image user "postgres" -> host UID 100070 on /srv/openproject/db
+    cap_drop:
+      - ALL                                      # port 5432 > 1024, no capability needed when not started as root
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /var/run/postgresql                      # unix socket
+      - /tmp
+    mem_limit: 1g
+    stop_grace_period: 30s                       # clean shutdown before a backup or restart
+    environment:
+      POSTGRES_USER: openproject
+      POSTGRES_PASSWORD: ${OPENPROJECT_DB_PASSWORD:?set in .env}
+      POSTGRES_DB: openproject
+    volumes:
+      - /srv/openproject/db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U openproject -d openproject"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+    networks:
+      - openproject_internal
+
+  cache:
+    image: memcached:1.6.45-alpine               # pinned
+    container_name: openproject-cache
+    restart: unless-stopped
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    mem_limit: 128m
+    command: ["memcached", "-m", "64"]           # 64 MB cache
+    networks:
+      - openproject_internal
+
+  seeder:
+    <<: *app
+    container_name: openproject-seeder
+    command: "./docker/prod/seeder"              # first run: schema + seed; later runs: migrate. Exits when done.
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - openproject_internal
+
+  web:
+    <<: *app
+    container_name: openproject                  # DNS name the proxy uses: reverse_proxy openproject:8080
+    command: "./docker/prod/web"
+    restart: unless-stopped
+    mem_limit: 2g
+    volumes:
+      - /srv/openproject/assets:/var/openproject/assets   # uploads; owner 101000
+      - ../../pki/ca.crt:/etc/ssl/certs/lab-ca.crt:ro
+    depends_on:
+      seeder:
+        condition: service_completed_successfully
+      cache:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health_checks/default"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 60s
+    networks:
+      - edge                                     # reached by Caddy
+      - openproject_internal
+      - ldap                                     # LDAP authentication against lldap (internal)
+
+  worker:
+    <<: *app
+    container_name: openproject-worker
+    command: "./docker/prod/worker"
+    restart: unless-stopped
+    mem_limit: 1536m
+    volumes:
+      - /srv/openproject/assets:/var/openproject/assets
+      - ../../pki/ca.crt:/etc/ssl/certs/lab-ca.crt:ro
+    depends_on:
+      seeder:
+        condition: service_completed_successfully
+      cache:
+        condition: service_started
+    networks:
+      - edge                                     # outbound calls (GitLab API/webhooks) go through Caddy's aliases
+      - openproject_internal
+
+networks:
+  edge:
+    external: true                               # created by bootstrap, shared by all stacks
+  ldap:
+    external: true
+  openproject_internal:
+    internal: true                               # db and cache: no route to anywhere else

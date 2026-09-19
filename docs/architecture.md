@@ -7,7 +7,7 @@
 | Caddy | `caddy:2.11.4-alpine` | current 2.x; Alpine variant = small image | reverse proxy, TLS termination | 80/443 (published) |
 | GitLab CE | `gitlab/gitlab-ce:19.4.0-ce.0` | current minor at build time; CE = pure open source (ADR-0004) | source code, CI/CD | 80 (HTTP), 22 (SSH, published as 2222) |
 | XWiki | `xwiki:17.10.13-postgres-tomcat` | **LTS** branch: longer fix support; the branch extensions are typically tested against | documentation | 8080 |
-| OpenProject | `openproject/openproject:<TBD>` | tag scheme to be checked when the stack is built | project management | 80 |
+| OpenProject | `openproject/openproject:16.6.10-slim` + `memcached:1.6.45-alpine` | current 16.6 patch; `-slim` = application only, one container per role, non-root — the all-in-one image is documented as not for production (ADR-0012) | project management | 8080 |
 | lldap | `lldap/lldap:v0.6.3` | current release | LDAP directory + web UI | 3890 (LDAP), 17170 (web) |
 | PostgreSQL ×2 | `postgres:17.11-alpine` | OpenProject requires PostgreSQL ≥ 16 (system requirements); XWiki's official compose example initialises the DB with the PostgreSQL 17 `builtin` locale provider, which 16 lacks; 17 is maintained until late 2029 | databases for XWiki and OpenProject | 5432 (internal only) |
 
