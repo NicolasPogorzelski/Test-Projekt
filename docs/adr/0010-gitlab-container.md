@@ -145,7 +145,9 @@ on a file owned by an unmapped host UID (P-010).
   capacity nobody uses; leaving it — no headroom for a push or a CI job
   once the other stacks run. Revisit when a CI runner or more than ~50
   users are added; it is one line and a two-minute restart.
-- **Result:** measured after the change — see `services/gitlab/README.md`.
+- **Result:** 2.91 GiB idle after the change (was 5.97 GiB) — measured with
+  `docker stats` a few minutes after the restart, 179 processes instead of
+  332.
 
 ## Consequences
 - All GitLab-specific NGINX keys use the `gitlab_rails['nginx'][...]`

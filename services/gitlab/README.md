@@ -78,9 +78,9 @@ sudo docker stats --no-stream gitlab
 sudo docker logs gitlab 2>&1 | grep -c NoScriptError
 sudo docker logs gitlab 2>&1 | grep -c 'Peer authentication failed'
 ```
-Results on 2026-09-19 (first build): all checks as expected; `docker stats`
-showed 5.97 GiB idle right after start — see ADR-0010 for the sizing
-follow-up. Because the image tails the log files in the volume, `docker logs`
+Results on 2026-09-19 (first build): all checks as expected. `docker stats`
+showed 5.97 GiB idle with the auto-detected 8 Puma workers and 2.91 GiB with
+`puma['worker_processes'] = 2` (ADR-0010, decision 7). Because the image tails the log files in the volume, `docker logs`
 also replays entries from before a container was recreated.
 
 ## Operations
