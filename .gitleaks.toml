@@ -25,4 +25,5 @@ regexes = [
   '''^192\.0\.2\.[0-9]{1,3}$''',      # RFC 5737 TEST-NET-1, reserved for documentation
   '''^198\.51\.100\.[0-9]{1,3}$''',   # RFC 5737 TEST-NET-2
   '''^203\.0\.113\.[0-9]{1,3}$''',    # RFC 5737 TEST-NET-3
+  '''^172\.(1[6-9]|2[0-9]|3[01])\.0\.0$''',   # Docker default address pool, network addresses only (CIDR notation)
 ]

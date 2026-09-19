@@ -242,17 +242,20 @@ configure_sudoers() {
 
 create_srv_layout() {
     log "$SRV layout"
-    # <relative dir>:<owner uid>  - owner 0 until the stack that uses it is added;
-    # proxy/data and proxy/config belong to Caddy (container UID 1000 + REMAP_BASE)
+    # <relative dir>:<owner uid>  - owner 0 until the stack that uses it is added.
+    # Under userns-remap host UID 0 is invisible to containers, so a directory a
+    # container must write to belongs to REMAP_BASE + its container UID:
+    # Caddy runs as 1000, GitLab Omnibus runs as root (0) and chowns downwards itself.
     local caddy=$((REMAP_BASE + 1000))
     local dirs=(
         "proxy/certs:0"
         "proxy/data:$caddy"
         "proxy/config:$caddy"
         "lldap:0"
-        "gitlab/config:0"
-        "gitlab/logs:0"
-        "gitlab/data:0"
+        "gitlab/config:$REMAP_BASE"
+        "gitlab/config/trusted-certs:$REMAP_BASE"    # pre-created: reconfigure writes rehash symlinks here
+        "gitlab/logs:$REMAP_BASE"
+        "gitlab/data:$REMAP_BASE"
         "xwiki/data:0"
         "xwiki/db:0"
         "openproject/assets:0"
