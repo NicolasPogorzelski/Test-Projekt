@@ -24,7 +24,7 @@ Created by `scripts/bootstrap.sh`. Networks `edge` and `ldap` exist
 ## First start
 ```
 cd ~/Test-Projekt/services/openproject
-umask 077 && printf 'OPENPROJECT_DB_PASSWORD=%s\nOPENPROJECT_SECRET_KEY_BASE=%s\n' \
+install -m 600 /dev/null .env && printf 'OPENPROJECT_DB_PASSWORD=%s\nOPENPROJECT_SECRET_KEY_BASE=%s\n' \
   "$(openssl rand -hex 24)" "$(openssl rand -hex 64)" > .env
 cat .env      # copy SECRET_KEY_BASE into the password manager (backup-relevant)
 sudo docker compose config --quiet && sudo docker compose up -d
@@ -79,3 +79,11 @@ sudo docker stats --no-stream openproject openproject-worker openproject-db open
 - Not running: `cron` (reminders, digests) — add
   `command: "./docker/prod/cron"` as a sixth service once a mail server
   exists (ADR-0012 §2).
+
+Results on 2026-09-19 (first build): seeder exited 0 after ~1 minute, web
+healthy; `db` 70:70 with `[ALL]` dropped and read-only, `cache` as
+`memcache` with the same, web/worker as UID 1000; no published port; memory
+web 1.56 GiB / worker 640 MiB / db 65 MiB / cache 2 MiB at idle (web limit
+raised to 3 GiB). Sign-in through Caddy with the hardened headers plus
+OpenProject's own Content-Security-Policy; LDAP verified with a member and a
+non-member of `pm_user` (`docs/integration.md`).

@@ -84,7 +84,7 @@ services:
     container_name: openproject                  # DNS name the proxy uses: reverse_proxy openproject:8080
     command: "./docker/prod/web"
     restart: unless-stopped
-    mem_limit: 2g
+    mem_limit: 3g                        # measured 1.56 GiB idle: 2 GiB left no headroom (ADR-0012)
     volumes:
       - /srv/openproject/assets:/var/openproject/assets   # uploads; owner 101000
       - ../../pki/ca.crt:/etc/ssl/certs/lab-ca.crt:ro

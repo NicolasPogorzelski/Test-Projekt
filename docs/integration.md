@@ -26,7 +26,19 @@ as `bob` (no group) was refused with "Invalid credentials" — the group
 filter, not the password, is the gate.
 
 ### OpenProject
-_TBD: Administration → Authentication → LDAP authentication._
+Configured in the admin UI (Administration → Authentication → LDAP
+authentication, `/admin/ldap_auth_sources`): host `lldap`, port 3890, no
+encryption (internal network), system account
+`uid=svc-openproject,ou=people,dc=lab,dc=test`, base `ou=people,dc=lab,dc=test`,
+filter `(memberof=cn=pm_user,ou=groups,dc=lab,dc=test)`, automatic user
+creation, attributes `uid`/`givenName`/`sn`/`mail`. Self-registration is
+disabled, so LDAP is the only way in for non-admin users.
+
+Verified 2026-09-19: "Test connection" succeeded; sign-in as `alice`
+(member of `pm_user`) created her account, sign-in as `bob` (no group) was
+refused. Note: OpenProject requires first and last name — lldap users need
+`givenName`/`sn` filled, not only the display name (lldap README,
+onboarding).
 
 ### XWiki
 _TBD: LDAP Authenticator extension / LDAP Application._

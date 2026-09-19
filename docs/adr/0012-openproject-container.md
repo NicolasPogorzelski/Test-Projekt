@@ -67,3 +67,10 @@ recommended for production"). OpenProject 16 requires PostgreSQL ≥ 16.
   `OPENPROJECT_HSTS=false`: HSTS is Caddy's job (ADR-0005).
 - The seeder runs on every `up` (migrations on upgrades) and must finish
   before web/worker start (`service_completed_successfully`).
+- **Measured 2026-09-19 (idle, after first start):** web 1.56 GiB, worker
+  640 MiB, db 65 MiB, cache 2 MiB. The web limit was raised from 2 to 3 GiB
+  because 78 % use at idle leaves no headroom for exports or larger
+  requests; worker 1.5 GiB, db 1 GiB and cache 128 MiB stay. Verified:
+  `db` and `cache` run with all capabilities dropped and a read-only root
+  filesystem (cache as the image's own `memcache` user), web/worker as
+  `app` (UID 1000); no port is published.
