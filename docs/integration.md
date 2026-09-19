@@ -71,14 +71,19 @@ enabled per project; GitLab side — project webhook to
 `https://pm.lab.test/webhooks/gitlab?key=<token>` with push, comment, issue,
 merge request and pipeline events, SSL verification **enabled** (requires the
 private CA in `/etc/gitlab/trusted-certs/`).
-_TBD: steps and screenshots._
+**Not built** within the three-day time-box: the shared identity (§1) was
+verified for all three services first; the webhook is an extension step
+(`docs/security.md`, "Known gaps", item 4). The paragraph above is the
+planned path.
 
 ## 3. XWiki ↔ OpenProject
 `xwiki-contrib/openproject` (LGPL) macro: work package lists/tables in wiki
 pages, connected via an OAuth application registered in OpenProject
 (Administration → Authentication → OAuth applications).
-_TBD: installation via Extension Manager, OAuth client configuration, JVM
-trust store for the private CA._
+**Not built** within the time-box, same reasoning as §2; the macro would
+additionally need the private CA in XWiki's JVM trust store, which is already
+in place (`/srv/xwiki/cacerts`, ADR-0013). — `docs/security.md`, "Known gaps",
+item 4.
 
 ## 4. Links that tie the tools together
 - Project template in OpenProject linking to the XWiki space and the GitLab

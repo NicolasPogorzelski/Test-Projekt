@@ -22,4 +22,3 @@ Verification checklist after restore:
 - [ ] LDAP login works in GitLab, XWiki, OpenProject
 - [ ] a test repository can be cloned via SSH :2222 and HTTPS
 - [ ] a test wiki page and a test work package exist with their attachments
-- [ ] GitLab → OpenProject webhook still delivers

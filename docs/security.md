@@ -87,32 +87,41 @@ matters, why it was deferred, and where the decision is recorded.
 3. **2FA for LDAP users in GitLab** (currently enforced for administrators
    only): one admin setting; deferred so that test users could be created
    without TOTP enrolment. — `services/gitlab/README.md`.
-4. **Minimal capability list for GitLab** (`cap_drop: ALL` + explicit
+4. **Tool-to-tool links: GitLab → OpenProject webhook and the XWiki →
+   OpenProject macro** (commits, merge requests and pipelines shown on
+   work packages; work-package tables in wiki pages). Today the three
+   products share only their identity (lldap). Deferred behind the
+   backup/restore test: both are UI configuration on top of a running
+   system and can be added at any time (webhook ~30 min, needs the
+   private CA in `/etc/gitlab/trusted-certs/`; macro via Extension
+   Manager plus an OAuth application in OpenProject).
+   — `docs/integration.md` §2, §3.
+5. **Minimal capability list for GitLab** (`cap_drop: ALL` + explicit
    `cap_add`) instead of Docker's default set; GitLab documents no minimal
    set, so the list must be derived by trial at 3–5 min per start.
    — ADR-0010 §2.
-5. **Trust only the proxy's address for `X-Forwarded-For`** (pinned `edge`
+6. **Trust only the proxy's address for `X-Forwarded-For`** (pinned `edge`
    subnet, fixed Caddy address) instead of the Docker pool; closes the
    forged-header path from a compromised neighbour container. — ADR-0010 §3.
-6. **Identities as code**: lldap's `bootstrap.sh` with versioned user/group
+7. **Identities as code**: lldap's `bootstrap.sh` with versioned user/group
    definitions replacing the manual UI procedure; reconciles idempotently,
    so it can be introduced without discarding existing entries.
    — ADR-0011 §4.
-7. **Compose `secrets:` (file-based) where images support `_FILE`
+8. **Compose `secrets:` (file-based) where images support `_FILE`
    variables** (lldap does): keeps secrets out of `docker inspect`. Deferred
    so that all stacks use one mechanism today. — ADR-0009, ADR-0011.
-8. **LDAPS between containers**: traffic is plain text on an internal Docker
+9. **LDAPS between containers**: traffic is plain text on an internal Docker
    network; LDAPS would add certificate handling in every client. — ADR-0006.
-9. **Content-Security-Policy in GitLab** (off by default, sent as an empty
-   header); application setting, needs testing against the UI. — P-007.
-   **XWiki session IDs in URLs** (`;jsessionid=` on redirects, URL
-   rewriting for cookie-less clients): disable in Tomcat's `context.xml`
-   (`disableURLRewriting`) so session IDs never land in logs or referrers.
-   **XWiki read-only root filesystem**: possible with tmpfs for Tomcat's
-   `work/`, `temp/`, `logs/` — untested. — ADR-0013.
-   **Offboarding automation for XWiki**: the `LDAP user cleanup` extension
-   removes profiles of users deleted from LDAP; only after the offboarding
-   policy decides whether profiles are deleted or kept (audit trail).
-10. **Rootless Docker**, **intermediate CA**, **central log collection and
+10. **Content-Security-Policy in GitLab** (off by default, sent as an empty
+    header); application setting, needs testing against the UI. — P-007.
+    **XWiki session IDs in URLs** (`;jsessionid=` on redirects, URL
+    rewriting for cookie-less clients): disable in Tomcat's `context.xml`
+    (`disableURLRewriting`) so session IDs never land in logs or referrers.
+    **XWiki read-only root filesystem**: possible with tmpfs for Tomcat's
+    `work/`, `temp/`, `logs/` — untested. — ADR-0013.
+    **Offboarding automation for XWiki**: the `LDAP user cleanup` extension
+    removes profiles of users deleted from LDAP; only after the offboarding
+    policy decides whether profiles are deleted or kept (audit trail).
+11. **Rootless Docker**, **intermediate CA**, **central log collection and
     alerting**: production-grade measures outside the scope of a
     single-host lab. — ADR-0002, ADR-0007.
