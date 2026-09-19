@@ -1,0 +1,32 @@
+services:
+  lldap:
+    image: lldap/lldap:v0.6.3-alpine-rootless   # pinned; rootless variant starts as UID 1000 (ADR-0011)
+    container_name: lldap                # DNS name for the proxy (lldap:17170) and the LDAP clients (lldap:3890)
+    restart: unless-stopped
+    user: "1000:1000"                    # image user "lldap" -> host UID 101000 on /srv/lldap
+    cap_drop:
+      - ALL                              # ports 3890/17170 are unprivileged, nothing else needs a capability
+    security_opt:
+      - no-new-privileges:true
+    read_only: true                      # writes only /data (config copy, users.db)
+    tmpfs:
+      - /tmp
+    mem_limit: 256m                      # single Rust process, ~30 MB in use; the limit caps a runaway
+    environment:
+      LLDAP_LDAP_BASE_DN: dc=lab,dc=test
+      LLDAP_HTTP_URL: https://ldap.lab.test              # public URL: password-reset links, origin checks
+      # secrets from services/lldap/.env (openssl rand); ":?" aborts if one is missing
+      LLDAP_JWT_SECRET: ${LLDAP_JWT_SECRET:?set in .env}
+      LLDAP_KEY_SEED: ${LLDAP_KEY_SEED:?set in .env}     # never change after first start: encrypts stored keys
+      LLDAP_LDAP_USER_PASS: ${LLDAP_LDAP_USER_PASS:?set in .env}   # built-in admin "admin"
+    volumes:
+      - /srv/lldap:/data                 # lldap_config.toml (copied from the image template) + users.db (SQLite)
+    networks:
+      - edge                             # web UI reached by Caddy as ldap.lab.test
+      - ldap                             # LDAP port for GitLab, OpenProject, XWiki; internal network
+
+networks:
+  edge:
+    external: true                       # created by bootstrap, shared by all stacks
+  ldap:
+    external: true

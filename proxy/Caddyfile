@@ -35,5 +35,11 @@ pm.lab.test {
 ldap.lab.test {
       import hardened
       tls /certs/ldap.lab.test.crt /certs/ldap.lab.test.key
+      # lldap is the root of trust for every service and has no second factor:
+      # an independent credential in front of its UI (ADR-0011). The bcrypt
+      # hashes live outside the repository in /srv/proxy/config/ldap-ui.auth.
+      basic_auth {
+              import /config/ldap-ui.auth
+      }
       reverse_proxy lldap:17170
 }

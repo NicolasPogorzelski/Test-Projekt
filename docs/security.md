@@ -33,7 +33,7 @@ The files named in "Where" are what the script writes.
 | per-stack internal networks | DBs unreachable from other stacks | every `compose.yaml` | planned |
 | `cap_drop: [ALL]`, `security_opt: [no-new-privileges:true]`, `read_only` where possible | limit what a compromised process can do | every `compose.yaml` (exceptions documented) | done (proxy); gitlab: `no-new-privileges` only, no `cap_drop` — Omnibus needs root and user switching, exception recorded in ADR-0010; planned (lldap, xwiki, openproject) |
 | Caddy: `user: 1000:1000`, `cap_drop: ALL` + `cap_add: NET_BIND_SERVICE` (the binary's file capability, see P-005), `read_only`, `no-new-privileges`, `admin off`, HTTP/3 off | the only Internet-facing process runs with one capability and a read-only filesystem | `proxy/compose.yaml`, `proxy/Caddyfile` | done |
-| non-root images where available (lldap) | — | — | planned |
+| non-root images where available (lldap) | no root inside the container at all | `services/lldap/compose.yaml` (`-rootless` image, `user: 1000:1000`, `cap_drop: ALL`, `read_only`) | done (lldap); Caddy runs non-root too |
 | resource limits (`mem_limit`) | one runaway container cannot starve the host | `services/gitlab/compose.yaml` (8 GiB, ADR-0010) | done (gitlab), planned (others) |
 
 ## Transport
@@ -49,7 +49,8 @@ The files named in "Where" are what the script writes.
 |---|---|---|
 | sign-up disabled | GitLab (admin settings, verified: `/users/sign_up` redirects to sign-in), OpenProject, XWiki | done (GitLab), planned (others) |
 | 2FA enforced for admins, Admin Mode (re-authentication for the admin area), no password authentication for Git over HTTPS (tokens only) | GitLab admin settings (`services/gitlab/README.md`) | done |
-| per-service read-only LDAP bind users; per-service access groups | lldap | planned |
+| per-service read-only LDAP bind users (`lldap_strict_readonly`); per-service access groups (`git_user`, `wiki_user`, `pm_user`) | lldap; GitLab `user_filter` verified with a member and a non-member | done (directory, GitLab), planned (OpenProject, XWiki) |
+| lldap web UI behind an additional Caddy `basic_auth` gate (independent credential, hash outside the repository); LDAP port never published | the directory is the root of trust for all services and has neither MFA nor login rate limiting; before production: forward-auth with MFA or admin-network restriction (ADR-0011) | `proxy/Caddyfile`, `/srv/proxy/config/ldap-ui.auth` | done |
 | unused GitLab subsystems disabled (registry, Pages, KAS, Prometheus, outgoing mail) | `GITLAB_OMNIBUS_CONFIG` in `services/gitlab/compose.yaml`; verified with `gitlab-ctl status` | done |
 
 ## Secrets and data
@@ -67,8 +68,42 @@ encrypted off-host backups, CA key offline.
 - `openssl s_client` / browser checks for every hostname (TBD).
 - Port scan from outside (`nmap`) showing only 22, 80, 443, 2222 (TBD).
 
-## Known gaps / next steps
-- Rootless Docker.
-- Intermediate CA.
-- Central log collection and alerting.
-- Compose `secrets:` where images support `_FILE` variables.
+## Known gaps / extension steps (in order of value)
+Deliberately not built within the three-day time-box; each item names why it
+matters, why it was deferred, and where the decision is recorded.
+
+1. **MFA in front of the lldap admin UI** (forward-auth with Authelia or
+   Authentik, or restriction to an admin network). The directory is the root
+   of trust for every service and has neither MFA nor login rate limiting;
+   today an independent `basic_auth` gate stands in front of it. Deferred:
+   a further service with its own secrets and session logic (2–3 h) whose
+   failure modes would have put the restore test at risk. Required before
+   production use. — ADR-0011 §3.
+2. **Detection of failed gate attempts**: dedicated Caddy access log for
+   `ldap.lab.test` and a runbook line to review 401s; later fail2ban on the
+   host reading that log (Caddy has no built-in rate limiting). Cheap
+   (~10 min for the log), deferred behind the three MVP services.
+3. **2FA for LDAP users in GitLab** (currently enforced for administrators
+   only): one admin setting; deferred so that test users could be created
+   without TOTP enrolment. — `services/gitlab/README.md`.
+4. **Minimal capability list for GitLab** (`cap_drop: ALL` + explicit
+   `cap_add`) instead of Docker's default set; GitLab documents no minimal
+   set, so the list must be derived by trial at 3–5 min per start.
+   — ADR-0010 §2.
+5. **Trust only the proxy's address for `X-Forwarded-For`** (pinned `edge`
+   subnet, fixed Caddy address) instead of the Docker pool; closes the
+   forged-header path from a compromised neighbour container. — ADR-0010 §3.
+6. **Identities as code**: lldap's `bootstrap.sh` with versioned user/group
+   definitions replacing the manual UI procedure; reconciles idempotently,
+   so it can be introduced without discarding existing entries.
+   — ADR-0011 §4.
+7. **Compose `secrets:` (file-based) where images support `_FILE`
+   variables** (lldap does): keeps secrets out of `docker inspect`. Deferred
+   so that all stacks use one mechanism today. — ADR-0009, ADR-0011.
+8. **LDAPS between containers**: traffic is plain text on an internal Docker
+   network; LDAPS would add certificate handling in every client. — ADR-0006.
+9. **Content-Security-Policy in GitLab** (off by default, sent as an empty
+   header); application setting, needs testing against the UI. — P-007.
+10. **Rootless Docker**, **intermediate CA**, **central log collection and
+    alerting**: production-grade measures outside the scope of a
+    single-host lab. — ADR-0002, ADR-0007.
