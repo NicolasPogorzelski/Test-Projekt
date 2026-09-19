@@ -69,10 +69,12 @@ individual service configurations. Running it behind Caddy (ADR-0005) with
 - **Accepted residual risk:** any container on `edge` (the other stacks) could
   send a forged `X-Forwarded-For` directly to `gitlab:80`. An attacker in that
   position can already do worse. (b) is the precise extension step.
-- **To verify** (part of the stack's checklist): Caddy must not pass a
-  client-supplied `X-Forwarded-For` through; expected from Caddy's
-  `reverse_proxy` defaults without `trusted_proxies`, measured with a forged
-  header.
+- **Verified 2026-09-19:** a request from the workstation with a forged
+  `X-Forwarded-For: 203.0.113.9` was logged by GitLab (`remote_ip` in the
+  Workhorse access log) with the workstation's real public address — Caddy
+  does not pass a client-supplied header through (its `reverse_proxy`
+  default without `trusted_proxies`), and `real_ip` takes the address Caddy
+  sets.
 
 ### 4. Ownership of the bind-mounted directories
 Under `userns-remap`, host UID 0 has no mapping inside the container, so
