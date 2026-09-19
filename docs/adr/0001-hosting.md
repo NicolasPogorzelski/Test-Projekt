@@ -34,7 +34,8 @@ Hetzner Cloud Firewall in front of the host.
   access, no exposed backend ports, firewall — all of it demonstrable.
 - 16 GB is the GitLab single-node baseline (see ADR-0004); OpenProject, XWiki
   (JVM), lldap, Caddy and three PostgreSQL instances fit alongside.
-- Costs for three days are in the low single-digit euro range (hourly billing).
+- Costs for the three-day build are around ten euros (CPX42 at about 0.13 EUR/h,
+  hourly billing); the server is deleted after the final backup.
 
 ## Consequences
 - Only test data is processed; no personal data of third parties.
