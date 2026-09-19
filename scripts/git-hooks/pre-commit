@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+# Pre-commit hook (ADR-0009). Activate once per clone:
+#   git config core.hooksPath scripts/git-hooks
+#
+# Layer 1 - gitleaks on the staged changes: credentials (default rules) and
+#   IPv4 addresses (.gitleaks.toml). Fails closed: no gitleaks, no commit.
+# Layer 2 - private identifiers (admin account, host names, key names) that
+#   must never appear in this public repository. They cannot be listed in a
+#   tracked file, so the patterns live outside the repository:
+#   git config hooks.sanitizePatterns ~/path/to/sanitize-patterns
+#   (one extended regex per line, matched case-insensitively against the
+#   added lines of the staged diff). Without that setting this layer is
+#   skipped with a notice; layer 1 still runs.
+
+if ! command -v gitleaks >/dev/null 2>&1; then
+    echo "pre-commit: gitleaks not found in PATH - install it (brew install gitleaks) or commit with --no-verify" >&2
+    exit 1
+fi
+gitleaks git --pre-commit --staged --redact --no-banner
+
+patterns="$(git config --get hooks.sanitizePatterns || true)"
+if [[ -z "$patterns" ]]; then
+    echo "pre-commit: hooks.sanitizePatterns not set - private-identifier check skipped" >&2
+    exit 0
+fi
+[[ -r "$patterns" ]] || { echo "pre-commit: pattern file $patterns not readable" >&2; exit 1; }
+
+# added lines only ('+' but not the '+++' file header), so removing an
+# identifier never blocks the commit that removes it
+if hits="$(git diff --cached --unified=0 --no-color | grep -E '^\+' | grep -Ev '^\+\+\+' | grep -Ei -f "$patterns")"; then
+    echo "pre-commit: private identifier in staged changes (patterns: $patterns):" >&2
+    echo "$hits" >&2
+    exit 1
+fi

@@ -83,3 +83,46 @@ Chronological. Format: symptom → verification → cause → fix / decision.
   Caddy's error path, which does not pass through the site's `header`
   handler. To be re-checked with a real backend; if headers are still missing
   on error responses, add a `handle_errors` block that sets them.
+
+## P-008 — `dockremap` received the same subordinate range as the admin user
+- **Symptom:** `/etc/subuid` (and `/etc/subgid`) on the first host contain
+  both `<admin>:100000:65536` and `dockremap:100000:65536` — two users, one
+  identical range.
+- **Verification:** `cat /etc/subuid /etc/subgid`; `login.defs` has
+  `SUB_UID_MIN 100000`, so Debian's `useradd` had already given the first
+  regular user the range starting at 100000. Docker's allocation code
+  (moby tag `docker-v29.8.1`, `daemon/internal/usergroup/add_linux.go`:
+  `defaultRangeStart = 100000`, `findNextUIDRange()` →
+  `user.CurrentUserSubUIDs()`) only looks at the ranges of the *calling* user
+  (root) and starts at its own default 100000 when none exist. Ranges of other
+  users are never considered.
+- **Cause:** two independent allocators (shadow's `useradd` and `dockerd`)
+  with the same default start and no shared bookkeeping.
+- **Impact:** none for isolation — the admin user does not run user
+  namespaces, so nothing else maps these IDs. The real risk is
+  **reproducibility**: on a rebuild `dockerd` could pick a different start
+  (e.g. if root ever gets a range), and every documented host UID such as
+  `101000` for Caddy would be wrong.
+- **Fix:** `scripts/bootstrap.sh` creates `dockremap` itself and pins
+  `dockremap:100000:65536` in `/etc/subuid` and `/etc/subgid`; `daemon.json`
+  names the user explicitly (`"userns-remap": "dockremap"`) instead of
+  `"default"`. The script warns when another user shares the range, which is
+  expected on the first host and documents this finding on every run.
+
+## P-009 — First image pulled before `userns-remap` was active
+- **Symptom:** ADR-0002 says `userns-remap` is enabled "before the first
+  image pull". The sudo journal of day 1 shows `docker run hello-world`
+  *before* `daemon.json` was written and Docker restarted.
+- **Verification:** `journalctl _COMM=sudo` order; `/var/lib/docker/image`
+  (unmapped store) created 13:07, `/var/lib/docker/100000.100000` (mapped
+  store) created 13:23.
+- **Cause:** the manual order on day 1 was install → test → configure. The
+  package postinst starts `dockerd` immediately with whatever `daemon.json`
+  exists at that moment — nothing, in this case.
+- **Impact:** none: the unmapped store only holds `hello-world`, which no
+  stack uses; the remapped daemon never reads it. It costs a few kilobytes.
+- **Fix:** `scripts/bootstrap.sh` writes `daemon.json` before
+  `apt-get install docker-ce`, so the first `dockerd` start already runs with
+  the remap and the unmapped store is never populated. Lesson: configuration
+  files take effect when the process starts, not when they are written —
+  put them in place before the first start.

@@ -1,0 +1,28 @@
+# gitleaks configuration (ADR-0009). gitleaks looks for this file in the
+# repository root, so the pre-commit hook and the CI job use the same rules.
+#
+# The default rule set covers credentials. This file adds what the project's
+# documentation rule forbids as well: real IP addresses. Names that must not
+# appear either (admin account, host names) cannot be listed here without
+# publishing them; the pre-commit hook checks those against a pattern file
+# outside the repository (see scripts/git-hooks/pre-commit).
+
+title = "Test-Projekt"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "ipv4-address"
+description = "IPv4 address: only *.lab.test names and documentation ranges belong in this repository"
+regex = '''\b(?:(?:25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])\b'''
+
+[[rules.allowlists]]
+regexTarget = "match"
+regexes = [
+  '''^0\.0\.0\.0$''',                 # "all interfaces", not an address
+  '''^127\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$''',   # loopback
+  '''^192\.0\.2\.[0-9]{1,3}$''',      # RFC 5737 TEST-NET-1, reserved for documentation
+  '''^198\.51\.100\.[0-9]{1,3}$''',   # RFC 5737 TEST-NET-2
+  '''^203\.0\.113\.[0-9]{1,3}$''',    # RFC 5737 TEST-NET-3
+]

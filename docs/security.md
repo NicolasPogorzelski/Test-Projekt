@@ -6,15 +6,21 @@ compliance claim). The Status column separates what is built from what is
 planned or was dropped for time.
 
 ## Host
+
+Every row except the provider firewall and the deploy key is applied by
+`scripts/bootstrap.sh`; its self-test checks the effective state (`docker
+info`, `sshd -T`, `sudo -l`, `apt-cache policy`) and fails on any deviation.
+The files named in "Where" are what the script writes.
+
 | Measure | Why | Where | ISO 27001:2022 | Status |
 |---|---|---|---|---|
 | SSH key-only, root login disabled after admin user exists | no password brute force | `/etc/ssh/sshd_config.d/` | A.8.5 secure authentication | done |
 | Hetzner Cloud Firewall: inbound 22, 80, 443, 2222 only | reduce exposed surface before the host | Hetzner console | A.8.20 network security | done |
 | unattended-upgrades enabled for Debian origins (daily timers) | timely security patches from Debian | `/etc/apt/apt.conf.d/20auto-upgrades`, `50unattended-upgrades` (package default) | A.8.8 technical vulnerabilities | done |
-| Docker CE repository key scoped with `Signed-By` | limit reach of the third-party key | `/etc/apt/sources.list.d/docker.sources` | A.8.19 software installation | done |
-| `userns-remap` | container root is unprivileged on the host | `/etc/docker/daemon.json` | A.8.9 configuration management | done |
+| Docker CE repository key scoped with `Signed-By`; key fingerprint compared with the value pinned in `bootstrap.sh` on every run | limit reach of the third-party key; detect a swapped key at the download URL | `/etc/apt/keyrings/docker.asc`, `/etc/apt/sources.list.d/docker.sources` | A.8.19 software installation | done (day 1: manual `gpg --show-keys`; since day 2: checked by the script) |
+| `userns-remap` with a fixed subordinate range (`dockremap:100000:65536`) | container root is unprivileged on the host; fixed range keeps bind-mount owners reproducible (P-008) | `/etc/docker/daemon.json`, `/etc/subuid`, `/etc/subgid` | A.8.9 configuration management | done |
 | Docker used via `sudo`; no `docker` group membership; read-only sudoers rule for unattended checks | `docker` group is root-equivalent without password or audit trail | `/etc/sudoers.d/docker-readonly` | A.8.2 privileged access rights, A.8.15 logging | done |
-| apt pin `5:29.*` for Docker packages + Docker origin in unattended-upgrades | automatic security patches, manual major upgrades | `/etc/apt/preferences.d/docker-ce`, `/etc/apt/apt.conf.d/52unattended-upgrades-docker` | A.8.8 technical vulnerabilities | done |
+| apt pin `5:29.*` (priority 990) for `docker-ce` and `docker-ce-cli` + Docker origin in unattended-upgrades | automatic security patches, manual major upgrades of the engine. `containerd.io` and the buildx/compose plugins have their own version schemes, so a `5:29.*` pin would never match them; they follow normal updates (day 1 listed them in the pin without effect) | `/etc/apt/preferences.d/docker-ce`, `/etc/apt/apt.conf.d/52unattended-upgrades-docker` | A.8.8 technical vulnerabilities | done |
 | Container log rotation (10 MB × 3 per container), `live-restore` | a full disk stops every service; daemon restarts must not stop containers | `/etc/docker/daemon.json` | A.8.6 capacity management | done |
 | AppArmor default profile and seccomp builtin profile (Debian defaults, confirmed in `docker info`) | syscall and file-access confinement for every container | Docker defaults on Debian | A.8.9 configuration management | done |
 | Repository on the host is cloned with a **read-only deploy key** (one SSH key, bound to this repository only, no passphrase because `git pull` runs unattended) | a compromised host can read this repository and nothing else; no personal key on the server | GitHub → Settings → Deploy keys; `~/.ssh/config` on the host | A.8.2 privileged access rights | done |
@@ -49,6 +55,12 @@ planned or was dropped for time.
 ## Secrets and data
 See ADR-0009 and ADR-0008: `.env` outside git, gitleaks pre-commit,
 encrypted off-host backups, CA key offline.
+
+| Measure | Why | Where | ISO 27001:2022 | Status |
+|---|---|---|---|---|
+| gitleaks on every commit (staged changes, fails closed if the binary is missing) and on every push/PR in CI (full history) | a credential that reaches git history stays there; catching it before the commit is the only cheap point | `scripts/git-hooks/pre-commit` (`core.hooksPath`), `.github/workflows/secret-scan.yml` | A.8.28 secure coding | done |
+| custom gitleaks rule: any IPv4 address except loopback, `0.0.0.0` and RFC 5737 documentation ranges | the repository is public after hand-in; only `*.lab.test` names and placeholders may identify the host | `.gitleaks.toml` (used by hook and CI alike) | A.5.12 classification of information | done |
+| private identifiers (admin account, host names, key names) checked against a pattern list kept **outside** the repository | listing them in a tracked config would publish exactly what the check protects | `git config hooks.sanitizePatterns <file>`, read by the hook; skipped with a notice when unset | A.5.12 classification of information | done (workstation of the author; other admins set their own list) |
 
 ## Verification
 - `docker-bench-security` run and findings triaged (TBD, day 3).
