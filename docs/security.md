@@ -33,7 +33,7 @@ The files named in "Where" are what the script writes.
 | per-stack internal networks | DBs unreachable from other stacks | every `compose.yaml` | planned |
 | `cap_drop: [ALL]`, `security_opt: [no-new-privileges:true]`, `read_only` where possible | limit what a compromised process can do | every `compose.yaml` (exceptions documented) | done (proxy); gitlab: `no-new-privileges` only, no `cap_drop` — Omnibus needs root and user switching, exception recorded in ADR-0010; planned (lldap, xwiki, openproject) |
 | Caddy: `user: 1000:1000`, `cap_drop: ALL` + `cap_add: NET_BIND_SERVICE` (the binary's file capability, see P-005), `read_only`, `no-new-privileges`, `admin off`, HTTP/3 off | the only Internet-facing process runs with one capability and a read-only filesystem | `proxy/compose.yaml`, `proxy/Caddyfile` | done |
-| non-root images where available (lldap) | — | — | planned |
+| non-root images where available (lldap) | no root inside the container at all | `services/lldap/compose.yaml` (`-rootless` image, `user: 1000:1000`, `cap_drop: ALL`, `read_only`) | done (lldap); Caddy runs non-root too |
 | resource limits (`mem_limit`) | one runaway container cannot starve the host | `services/gitlab/compose.yaml` (8 GiB, ADR-0010) | done (gitlab), planned (others) |
 
 ## Transport
@@ -49,8 +49,8 @@ The files named in "Where" are what the script writes.
 |---|---|---|
 | sign-up disabled | GitLab (admin settings, verified: `/users/sign_up` redirects to sign-in), OpenProject, XWiki | done (GitLab), planned (others) |
 | 2FA enforced for admins, Admin Mode (re-authentication for the admin area), no password authentication for Git over HTTPS (tokens only) | GitLab admin settings (`services/gitlab/README.md`) | done |
-| per-service read-only LDAP bind users; per-service access groups | lldap | planned |
-| lldap web UI behind an additional Caddy `basic_auth` gate (independent credential, hash outside the repository); LDAP port never published | the directory is the root of trust for all services and has neither MFA nor login rate limiting; before production: forward-auth with MFA or admin-network restriction (ADR-0011) | `proxy/Caddyfile`, `/srv/proxy/config/ldap-ui.auth` | planned (with the lldap stack) |
+| per-service read-only LDAP bind users (`lldap_strict_readonly`); per-service access groups (`git_user`, `wiki_user`, `pm_user`) | lldap; GitLab `user_filter` verified with a member and a non-member | done (directory, GitLab), planned (OpenProject, XWiki) |
+| lldap web UI behind an additional Caddy `basic_auth` gate (independent credential, hash outside the repository); LDAP port never published | the directory is the root of trust for all services and has neither MFA nor login rate limiting; before production: forward-auth with MFA or admin-network restriction (ADR-0011) | `proxy/Caddyfile`, `/srv/proxy/config/ldap-ui.auth` | done |
 | unused GitLab subsystems disabled (registry, Pages, KAS, Prometheus, outgoing mail) | `GITLAB_OMNIBUS_CONFIG` in `services/gitlab/compose.yaml`; verified with `gitlab-ctl status` | done |
 
 ## Secrets and data

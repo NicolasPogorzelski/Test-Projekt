@@ -18,9 +18,12 @@ Behaviour: a person becomes a GitLab user at the first LDAP sign-in
 in at all); removing the person from `git_user` in lldap blocks the next
 sign-in. Local accounts (`root`) keep working with password + 2FA.
 
-Verification: `sudo docker exec gitlab gitlab-rake gitlab:ldap:check` lists
-the bind result and the users the filter returns; sign-in as `alice`
-(member of `git_user`) succeeds, sign-in as `bob` (no group) is refused.
+Verified 2026-09-19: `sudo docker exec gitlab gitlab-rake gitlab:ldap:check`
+→ `LDAP authentication... Success`, users with access: only
+`uid=alice,ou=people,dc=lab,dc=test`; browser sign-in on the LDAP tab as
+`alice` (member of `git_user`) succeeded and created her GitLab user, sign-in
+as `bob` (no group) was refused with "Invalid credentials" — the group
+filter, not the password, is the gate.
 
 ### OpenProject
 _TBD: Administration → Authentication → LDAP authentication._

@@ -84,3 +84,9 @@ sudo docker run --rm --network edge alpine sh -c 'apk add -q openldap-clients &&
 curl -sS -o /dev/null -w '%{http_code}\n' https://ldap.lab.test/
 curl -sS -o /dev/null -w '%{http_code}\n' -u '<gate user>' https://ldap.lab.test/
 ```
+
+Results on 2026-09-19 (first build): started on the first attempt with
+`read_only` and `cap_drop: ALL`; the gate answers 401 before lldap is
+reached; `gitlab-rake gitlab:ldap:check` bound as `svc-gitlab` and returned
+exactly the `git_user` member; positive and negative sign-in as documented in
+`docs/integration.md`.
