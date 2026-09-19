@@ -147,3 +147,22 @@ Chronological. Format: symptom → verification → cause → fix / decision.
   in `services/gitlab/README.md`). The copy travels with the volume in
   backups, so a restore needs no extra step. Lesson: a bind mount is the
   wrong tool for a file the application wants to own.
+
+## P-011 — GitLab resolves its own external hostname to itself, not to the proxy
+- **Symptom:** after the first successful start, the KAS service logs every
+  30 s: `Get "https://git.lab.test/api/v4/internal/kubernetes/receptive_agents":
+  dial tcp <address>:443: connect: connection refused`.
+- **Verification:** `docker exec gitlab getent hosts git.lab.test` returns
+  two addresses; `docker inspect` shows they are the GitLab container's own
+  addresses in `edge` and `ldap`, and that Caddy has a different one.
+- **Cause:** `compose.yaml` set `hostname: git.lab.test`. Docker writes a
+  container's hostname with its own address into the container's
+  `/etc/hosts`, and `/etc/hosts` wins over Docker's DNS. The proxy's network
+  alias for `git.lab.test` (ADR-0005, hairpin) was therefore never consulted;
+  any self-call through `external_url` reached the GitLab container itself,
+  which listens on 80 only.
+- **Fix:** drop `hostname:` (Omnibus derives everything from `external_url`)
+  and disable KAS (`gitlab_kas['enable'] = false`) as an unused subsystem.
+  Self-calls now go through Caddy with TLS — which also exercises the CA in
+  `trusted-certs/`. Lesson: never give a container the hostname that the
+  reverse proxy answers for.
