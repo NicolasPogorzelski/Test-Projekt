@@ -52,14 +52,18 @@ Then, once `sudo docker ps` shows `(healthy)`:
 Run on the host after the first start; expected results in brackets.
 
 ```
+# the proxy's name resolves to Caddy, not to the container itself (P-011)  [Caddy's address]
+sudo docker exec gitlab getent hosts git.lab.test
+# self-call through Caddy with TLS: hairpin works and the CA is trusted  [200]
+sudo docker exec gitlab curl -sS -o /dev/null -w '%{http_code}\n' https://git.lab.test/users/sign_in
 # no-new-privileges tolerated by Omnibus  [all services "run"]
 sudo docker exec gitlab gitlab-ctl status
-# registry / pages / prometheus absent    [no such lines]
-sudo docker exec gitlab gitlab-ctl status | grep -E 'registry|pages|prometheus'
+# registry / pages / kas / prometheus absent    [no such lines]
+sudo docker exec gitlab gitlab-ctl status | grep -E 'registry|pages|kas|prometheus'
 # memory limit applied                    [8589934592]
 sudo docker inspect --format '{{.HostConfig.Memory}}' gitlab
-# nginx in the container serves HTTP only, no HSTS from the backend  [HTTP/1.1 302, no strict-transport-security]
-sudo docker exec caddy wget -qS -O /dev/null http://gitlab/ 2>&1 | head -12
+# bundled nginx serves HTTP only, no HSTS from the backend  [HTTP/1.1 302, no strict-transport-security]
+sudo docker exec gitlab curl -sI http://localhost/ | grep -Ei '^(HTTP|strict-transport|location)'
 # security headers on a real 200/302 (P-007)  [strict-transport-security, x-content-type-options, referrer-policy present]
 curl -sI https://git.lab.test/users/sign_in | grep -Ei 'strict-transport|x-content-type|referrer-policy|server:'
 # real client IP, forged header must NOT win  [last line shows your IP, not 203.0.113.9]
@@ -69,7 +73,15 @@ sudo tail -1 /srv/gitlab/logs/nginx/gitlab_access.log
 sudo ls -l /srv/gitlab/config/trusted-certs/
 # actual memory use for ADR-0010  [note the number]
 sudo docker stats --no-stream gitlab
+# start-up noise that must not grow: one NoScriptError per Puma start, three
+# "Peer authentication failed" per reconfigure  [counts stay constant]
+sudo docker logs gitlab 2>&1 | grep -c NoScriptError
+sudo docker logs gitlab 2>&1 | grep -c 'Peer authentication failed'
 ```
+Results on 2026-09-19 (first build): all checks as expected; `docker stats`
+showed 5.97 GiB idle right after start — see ADR-0010 for the sizing
+follow-up. Because the image tails the log files in the volume, `docker logs`
+also replays entries from before a container was recreated.
 
 ## Operations
 - Configuration change: edit `compose.yaml`, `sudo docker compose up -d`

@@ -105,10 +105,45 @@ on a file owned by an unmapped host UID (P-010).
   lldap and Caddy. Without a limit, a runaway GitLab lets the kernel OOM
   killer pick *any* process on the host; with it, the kill lands inside the
   container, runit restarts the affected service, and maintenance stays a
-  single-container matter. The number is a starting point measured against
-  `docker stats` during the build; real monitoring is out of scope.
+  single-container matter. The number is a starting point; real monitoring
+  is out of scope.
+- **Measured 2026-09-19:** 5.97 GiB idle right after the first start
+  (74 % of the limit) on the 8-vCPU host. Omnibus sizes Puma workers by CPU
+  count; for a small team that is oversized. Follow-up decision 7 below.
 - Consistent with this, the bundled Prometheus is disabled (memory and one
-  listener less); registry, Pages and outgoing mail are disabled as unused.
+  listener less); registry, Pages, KAS and outgoing mail are disabled as
+  unused.
+
+### 7. Puma and Sidekiq sizing
+- **Finding:** the generated `puma.rb` had `workers 8, threads 4,4`.
+  Omnibus derives the worker count from `nproc` (respecting cgroup CPU
+  limits, not the memory limit) and available RAM — one worker per vCPU on
+  this 8-vCPU host, each a full copy of the Rails application (~700 MB).
+  Measured: 5.97 GiB idle.
+- **Theoretical sizing (documented for reference):** GitLab's sizing guide
+  lists "eight workers for 8 CPU cores and 16 GB of memory"
+  (https://docs.gitlab.com/administration/operations/puma/, "Worker and
+  thread sizing"), and the reference architecture for up to 1,000 users /
+  20 requests per second is exactly one 8 vCPU / 16 GB node
+  (https://docs.gitlab.com/administration/reference_architectures/1k_users/)
+  — dedicated to GitLab. The installer therefore assumed it owns the host.
+- **Real load:** the company is estimated at 20–30 people; this host also
+  runs XWiki, OpenProject, two PostgreSQL instances, lldap and Caddy. A
+  Puma worker handles CPU-bound requests one at a time; two workers × four
+  threads keep eight requests in flight, which covers a team of that size
+  with margin. Git push/pull and CI runners barely touch Puma.
+- **Decision:** `puma['worker_processes'] = 2` (the documented minimum: "a
+  node must never have fewer than two Puma workers" — the web editor needs
+  two; the memory-constrained guide's single-process mode was therefore not
+  chosen), `sidekiq['concurrency'] = 10` (default 20; recommended 5–10 in
+  https://docs.gitlab.com/omnibus/settings/memory_constrained_envs/), and
+  the Puma/Sidekiq metrics exporters off (same guide, "Disable monitoring";
+  nothing scrapes them).
+- **Rejected:** raising `mem_limit` instead — would keep paying RAM for
+  capacity nobody uses; leaving it — no headroom for a push or a CI job
+  once the other stacks run. Revisit when a CI runner or more than ~50
+  users are added; it is one line and a two-minute restart.
+- **Result:** measured after the change — see `services/gitlab/README.md`.
 
 ## Consequences
 - All GitLab-specific NGINX keys use the `gitlab_rails['nginx'][...]`

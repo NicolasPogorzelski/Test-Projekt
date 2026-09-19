@@ -45,11 +45,18 @@ services:
         # Git over SSH is published on host port 2222 (host sshd keeps 22).
         gitlab_rails['gitlab_shell_ssh_port'] = 2222
 
+        # Sized for the real load (a team of a few dozen), not for the host:
+        # auto-detection gives one Puma worker per vCPU (8 x ~700 MB). ADR-0010 (7).
+        puma['worker_processes'] = 2                         # documented minimum; 2 x 4 threads
+        sidekiq['concurrency'] = 10                          # default 20
+
         # Unused subsystems off: smaller attack surface and memory footprint.
         registry['enable'] = false
         gitlab_pages['enable'] = false
         gitlab_kas['enable'] = false                         # Kubernetes agent server, not in scope
         prometheus_monitoring['enable'] = false
+        puma['exporter_enabled'] = false                     # metrics endpoints without a Prometheus
+        sidekiq['metrics_enabled'] = false
         gitlab_rails['gitlab_email_enabled'] = false         # no mail server in scope
     ports:
       - "2222:22"                        # the only published backend port
