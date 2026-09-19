@@ -5,9 +5,22 @@
 Directory layout, bind users, groups: see ADR-0006.
 
 ### GitLab
-_TBD: `gitlab.rb` LDAP block (host `ldap`, port 3890, `uid`, base
-`ou=people,dc=lab,dc=test`, bind user `svc-gitlab`, `user_filter` on
-`memberOf=cn=git_user,ou=groups,dc=lab,dc=test`, attribute mapping)._
+Configured in `services/gitlab/compose.yaml` (`GITLAB_OMNIBUS_CONFIG`,
+`gitlab_rails['ldap_servers']`): host `lldap`, port 3890, plain LDAP on the
+internal network, bind user `uid=svc-gitlab,ou=people,dc=lab,dc=test`
+(member of `lldap_strict_readonly`), base `ou=people,dc=lab,dc=test`,
+`user_filter` `(&(objectclass=person)(memberof=cn=git_user,ou=groups,dc=lab,dc=test))`,
+attributes `uid`/`mail`/`displayName`/`givenName`/`sn`. The bind password
+comes from `services/gitlab/.env` (`GITLAB_LDAP_BIND_PASSWORD`).
+
+Behaviour: a person becomes a GitLab user at the first LDAP sign-in
+(`block_auto_created_users` false — the group filter decides who may sign
+in at all); removing the person from `git_user` in lldap blocks the next
+sign-in. Local accounts (`root`) keep working with password + 2FA.
+
+Verification: `sudo docker exec gitlab gitlab-rake gitlab:ldap:check` lists
+the bind result and the users the filter returns; sign-in as `alice`
+(member of `git_user`) succeeds, sign-in as `bob` (no group) is refused.
 
 ### OpenProject
 _TBD: Administration → Authentication → LDAP authentication._

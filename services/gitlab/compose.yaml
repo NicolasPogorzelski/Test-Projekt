@@ -45,6 +45,37 @@ services:
         # Git over SSH is published on host port 2222 (host sshd keeps 22).
         gitlab_rails['gitlab_shell_ssh_port'] = 2222
 
+        # Shared identity (ADR-0006, ADR-0011): plain LDAP on the internal "ldap"
+        # network, read-only bind user, only members of git_user may sign in.
+        # Attribute names follow lldap's GitLab example (example_configs/gitlab.md).
+        gitlab_rails['ldap_enabled'] = true
+        gitlab_rails['ldap_servers'] = {
+          'main' => {
+            'label' => 'LDAP',
+            'host' => 'lldap',
+            'port' => 3890,
+            'encryption' => 'plain',                        # LDAPS is an extension step (ADR-0006)
+            'uid' => 'uid',
+            'base' => 'ou=people,dc=lab,dc=test',
+            'bind_dn' => 'uid=svc-gitlab,ou=people,dc=lab,dc=test',
+            'password' => '${GITLAB_LDAP_BIND_PASSWORD:?set in .env}',
+            'active_directory' => false,
+            'user_filter' => '(&(objectclass=person)(memberof=cn=git_user,ou=groups,dc=lab,dc=test))',
+            'lowercase_usernames' => true,
+            'allow_username_or_email_login' => false,
+            # the group filter is the gate; the first sign-in creates the GitLab user
+            'block_auto_created_users' => false,
+            'timeout' => 10,
+            'attributes' => {
+              'username' => 'uid',
+              'email' => 'mail',
+              'name' => 'displayName',
+              'first_name' => 'givenName',
+              'last_name' => 'sn'
+            }
+          }
+        }
+
         # Sized for the real load (a team of a few dozen), not for the host:
         # auto-detection gives one Puma worker per vCPU (8 x ~700 MB). ADR-0010 (7).
         puma['worker_processes'] = 2                         # documented minimum; 2 x 4 threads
