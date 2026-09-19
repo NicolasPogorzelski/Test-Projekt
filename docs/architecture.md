@@ -14,6 +14,13 @@
 Tags were taken from the Docker Hub API on 2026-09-18. Every tag is exact
 (`x.y.z`), never `latest`, so a rebuild reproduces the same versions.
 
+Host engine as installed by `scripts/bootstrap.sh` on 2026-09-18 (Debian 13,
+Docker apt repository): `docker-ce` 29.8.1, `containerd.io` 2.3.5,
+`docker-compose-plugin` 5.5.1, `docker-buildx-plugin` 0.37.1. Only
+`docker-ce`/`docker-ce-cli` are pinned to `5:29.*` (`docs/security.md`);
+a rebuild therefore gets the newest 29.x engine and the current plugin
+versions, not necessarily these exact ones.
+
 ## Networks
 
 ```

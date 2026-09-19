@@ -40,8 +40,10 @@ scripts/         bootstrap.sh (host preparation), backup.sh, restore.sh
    `/etc/hosts`, import `pki/ca.crt` into your browser and verify its
    fingerprint:
    `SHA256 A7:08:31:80:94:29:B9:64:81:47:C3:83:9F:D3:55:04:AE:37:06:FD:81:9A:0D:AB:A7:9B:3E:3D:38:97:49:B0`
-2. **Host:** run `scripts/bootstrap.sh` (installs Docker CE, creates `/srv`, the
-   shared Docker network and the `userns-remap` configuration).
+2. **Host:** create the admin user (see "Host preparation" below), clone this
+   repository and run `sudo ./scripts/bootstrap.sh` from that account (sshd
+   hardening, Docker CE with `userns-remap`, apt pin, sudoers rule, `/srv`,
+   Docker networks — see [`scripts/README.md`](scripts/README.md)).
 3. Copy `.env.example` to `.env` in each stack directory and fill in secrets.
 4. Copy the service certificates to `/srv/proxy/certs/`.
 5. Start the stacks in this order: `proxy`, `lldap`, `gitlab`, `xwiki`, `openproject`.
@@ -58,8 +60,56 @@ scripts/         bootstrap.sh (host preparation), backup.sh, restore.sh
 
 ## Runbook
 
-_TBD — filled in as the build progresses: host preparation, first start, LDAP
-setup, certificate renewal, upgrade procedure, backup/restore._
+### Workstation setup
+
+Once per clone, so that every commit is scanned before it exists
+(`docs/security.md`, "Secrets and data"):
+
+```
+brew install gitleaks shellcheck            # or the distribution packages
+git config core.hooksPath scripts/git-hooks
+git config hooks.sanitizePatterns ~/path/to/sanitize-patterns   # optional, see below
+```
+
+`sanitize-patterns` is a private file **outside** the repository with one
+extended regex per line (your admin account name, real host names, key file
+names). The hook blocks a commit whose added lines match; without the setting
+the hook says so and only gitleaks runs. Before making the repository public,
+run the same check over the whole tree:
+`grep -rniE -f ~/path/to/sanitize-patterns --exclude-dir=.git .` (no output =
+clean).
+
+### Host preparation
+
+Prerequisites outside the repository: a Debian 13 (trixie) cloud server and a
+provider firewall that allows inbound TCP 22, 80, 443 and 2222 only.
+
+**First login as root** (once, via the provider's root key). Create the admin
+account and hand it the SSH key; everything else is done by `bootstrap.sh`.
+Use a lower-case username (`docs/problems.md` P-003).
+
+```
+adduser --gecos "" <admin>                 # asks for a password: this is the sudo password
+usermod -aG sudo <admin>
+install -d -m 700 -o <admin> -g <admin> /home/<admin>/.ssh
+install -m 600 -o <admin> -g <admin> /root/.ssh/authorized_keys /home/<admin>/.ssh/authorized_keys
+exit
+```
+
+Log in as `<admin>` (verify that this works before the next step — the script
+disables root and password logins), then:
+
+```
+git clone <this repository> ~/Test-Projekt          # read-only deploy key, see docs/security.md
+sudo ~/Test-Projekt/scripts/bootstrap.sh
+```
+
+The script is idempotent: run it again after any manual change on the host to
+make sure the baseline still holds; the self-test at the end must show only
+`PASS`. Details: [`scripts/README.md`](scripts/README.md).
+
+_TBD — first start, LDAP setup, certificate renewal, upgrade procedure,
+backup/restore, on-/offboarding, secrets rotation._
 
 ## Tooling and use of AI assistance
 
