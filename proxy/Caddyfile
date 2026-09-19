@@ -29,7 +29,7 @@ wiki.lab.test {
 pm.lab.test {
       import hardened
       tls /certs/pm.lab.test.crt /certs/pm.lab.test.key
-      reverse_proxy openproject:80
+      reverse_proxy openproject:8080
 }
 
 ldap.lab.test {

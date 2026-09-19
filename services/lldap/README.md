@@ -20,14 +20,15 @@ Created by `scripts/bootstrap.sh`. Networks `edge` and `ldap` exist (bootstrap).
 ## First start
 ```
 cd ~/Test-Projekt/services/lldap
-umask 077 && printf 'LLDAP_JWT_SECRET=%s\nLLDAP_KEY_SEED=%s\nLLDAP_LDAP_USER_PASS=%s\n' \
+install -m 600 /dev/null .env && printf 'LLDAP_JWT_SECRET=%s\nLLDAP_KEY_SEED=%s\nLLDAP_LDAP_USER_PASS=%s\n' \
   "$(openssl rand -base64 32)" "$(openssl rand -base64 32)" "$(openssl rand -base64 24)" > .env
 cat .env      # copy LLDAP_KEY_SEED and LLDAP_LDAP_USER_PASS into the password manager now
 sudo docker compose config --quiet && sudo docker compose up -d
 sudo docker logs lldap
 ```
 All three values are generated, so no secret ever appears on the command
-line or in the shell history; `umask 077` makes the new `.env` mode 600.
+line or in the shell history; `install -m 600 /dev/null .env` creates the
+file with mode 600 before anything is written into it.
 The key seed must never change afterwards; the admin password can be
 changed in the UI later (then update `.env` too, or set
 `LLDAP_FORCE_LDAP_USER_PASS_RESET` — see the config template).
@@ -54,8 +55,9 @@ The resulting DNs the services use:
 - bind user for GitLab: `uid=svc-gitlab,ou=people,dc=lab,dc=test`
 
 ## On-/offboarding (runbook)
-**Onboarding:** Users → Create user (username, e-mail, display name, initial
-password handed over out of band) → Groups: add the access groups the person
+**Onboarding:** Users → Create user (username, e-mail, display name, **first
+and last name** — OpenProject refuses to create an account without them —
+initial password handed over out of band) → Groups: add the access groups the person
 needs (`git_user`, `wiki_user`, `pm_user`). The person can sign in to each
 service immediately; GitLab creates its local user record at first login.
 

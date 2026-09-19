@@ -245,7 +245,8 @@ create_srv_layout() {
     # <relative dir>:<owner uid>  - owner 0 until the stack that uses it is added.
     # Under userns-remap host UID 0 is invisible to containers, so a directory a
     # container must write to belongs to REMAP_BASE + its container UID:
-    # Caddy and lldap run as 1000; GitLab Omnibus runs as root (0) and chowns downwards itself.
+    # Caddy, lldap and OpenProject run as 1000, PostgreSQL (alpine) as 70;
+    # GitLab Omnibus runs as root (0) and chowns downwards itself.
     local u1000=$((REMAP_BASE + 1000))
     local dirs=(
         "proxy/certs:0"
@@ -258,8 +259,8 @@ create_srv_layout() {
         "gitlab/data:$REMAP_BASE"
         "xwiki/data:0"
         "xwiki/db:0"
-        "openproject/assets:0"
-        "openproject/db:0"
+        "openproject/assets:$u1000"                 # OpenProject app user
+        "openproject/db:$((REMAP_BASE + 70))"       # postgres user in the alpine image
         "backups:0"
     )
     local entry dir owner
