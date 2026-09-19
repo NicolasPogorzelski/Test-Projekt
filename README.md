@@ -125,4 +125,6 @@ commit was made by the author.
 
 ## License
 
-_TBD_
+MIT — see [`LICENSE`](LICENSE). The third-party products deployed here keep
+their own licenses (GitLab CE: MIT Expat; OpenProject CE: GPLv3; XWiki: LGPLv2.1;
+lldap: GPLv3; Caddy: Apache-2.0).
