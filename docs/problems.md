@@ -66,14 +66,19 @@ Chronological. Format: symptom → verification → cause → fix / decision.
   redundant. Lesson: "drop all capabilities" must be checked against the
   image's file capabilities (`getcap`), not assumed.
 
-## P-006 — HTTP/3 still listed on the port-80 redirect listener (open)
+## P-006 — HTTP/3 still listed on the port-80 redirect listener (accepted)
 - **Symptom:** with `servers { protocols h1 h2 }` in the global block, the
   TLS servers run h1/h2, but the automatic HTTP→HTTPS redirect server logs
   `"protocols":["h1","h2","h3"]`.
 - **Impact:** none — UDP/443 is neither published by the container nor allowed
   by the cloud firewall, so HTTP/3 is unreachable regardless.
-- **Open:** verify in the Caddy documentation whether the option must be set
-  per listener (`servers :80 { … }`) to cover the redirect server as well.
+- **Decision (2026-09-19):** accepted as an observation. The Caddy
+  documentation states the default `protocols h1 h2 h3` but does not say
+  whether the automatically generated HTTP→HTTPS redirect server inherits
+  the global `servers` block. Since UDP/443 is neither published by the
+  container nor allowed by the cloud firewall, HTTP/3 cannot be reached
+  regardless of what the log lists; a per-listener `servers :80 { … }` block
+  is the extension step if the log line matters for a compliance scan.
 
 ## P-007 — Security headers absent on 502 responses (closed 2026-09-19)
 - **Symptom:** before any backend existed, `curl -I https://git.lab.test/`
