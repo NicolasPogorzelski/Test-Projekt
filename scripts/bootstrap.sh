@@ -246,7 +246,7 @@ create_srv_layout() {
     # Under userns-remap host UID 0 is invisible to containers, so a directory a
     # container must write to belongs to REMAP_BASE + its container UID:
     # Caddy, lldap and OpenProject run as 1000, PostgreSQL (alpine) as 70;
-    # GitLab Omnibus runs as root (0) and chowns downwards itself.
+    # GitLab Omnibus and XWiki (Tomcat) run as root (0) inside their containers.
     local u1000=$((REMAP_BASE + 1000))
     local dirs=(
         "proxy/certs:0"
@@ -257,8 +257,8 @@ create_srv_layout() {
         "gitlab/config/trusted-certs:$REMAP_BASE"    # pre-created: reconfigure writes rehash symlinks here
         "gitlab/logs:$REMAP_BASE"
         "gitlab/data:$REMAP_BASE"
-        "xwiki/data:0"
-        "xwiki/db:0"
+        "xwiki/data:$REMAP_BASE"                    # XWiki runs as container root (image has no user)
+        "xwiki/db:$((REMAP_BASE + 70))"             # postgres user in the alpine image
         "openproject/assets:$u1000"                 # OpenProject app user
         "openproject/db:$((REMAP_BASE + 70))"       # postgres user in the alpine image
         "backups:0"
