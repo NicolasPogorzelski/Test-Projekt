@@ -25,6 +25,22 @@ podman run --rm -v ./proxy/Caddyfile:/etc/caddy/Caddyfile:ro,Z -v ~/lab-pki/issu
 ```
 On the host: `sudo docker compose -f proxy/compose.yaml config --quiet`.
 
+## Basic auth in front of the lldap UI (once, on the host)
+`ldap.lab.test` carries an additional HTTP basic-auth layer (ADR-0011): an
+independent credential before the directory's own login. The hash file is
+not in the repository.
+```bash
+sudo docker run --rm -it caddy:2.11.4-alpine caddy hash-password   # type the UI-gate password twice, copy the bcrypt hash
+sudoedit /srv/proxy/config/ldap-ui.auth                            # one line per admin:  <username> <bcrypt-hash>
+sudo chown 101000:101000 /srv/proxy/config/ldap-ui.auth && sudo chmod 640 /srv/proxy/config/ldap-ui.auth
+sudo docker compose -f ~/Test-Projekt/proxy/compose.yaml restart caddy
+```
+`sudoedit` keeps the hash out of the shell history; owner 101000 = Caddy's
+host UID, so the container can read `/config/ldap-ui.auth`. Caddy refuses
+to start if the file is missing — create it before pulling a Caddyfile that
+imports it. The gate password is a separate secret from the lldap admin
+password (two independent layers).
+
 ## Start, restart, logs
 ```bash
 sudo docker compose -f proxy/compose.yaml up -d

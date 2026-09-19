@@ -245,13 +245,13 @@ create_srv_layout() {
     # <relative dir>:<owner uid>  - owner 0 until the stack that uses it is added.
     # Under userns-remap host UID 0 is invisible to containers, so a directory a
     # container must write to belongs to REMAP_BASE + its container UID:
-    # Caddy runs as 1000, GitLab Omnibus runs as root (0) and chowns downwards itself.
-    local caddy=$((REMAP_BASE + 1000))
+    # Caddy and lldap run as 1000; GitLab Omnibus runs as root (0) and chowns downwards itself.
+    local u1000=$((REMAP_BASE + 1000))
     local dirs=(
         "proxy/certs:0"
-        "proxy/data:$caddy"
-        "proxy/config:$caddy"
-        "lldap:0"
+        "proxy/data:$u1000"
+        "proxy/config:$u1000"
+        "lldap:$u1000"
         "gitlab/config:$REMAP_BASE"
         "gitlab/config/trusted-certs:$REMAP_BASE"    # pre-created: reconfigure writes rehash symlinks here
         "gitlab/logs:$REMAP_BASE"

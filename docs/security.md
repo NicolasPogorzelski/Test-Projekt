@@ -50,6 +50,7 @@ The files named in "Where" are what the script writes.
 | sign-up disabled | GitLab (admin settings, verified: `/users/sign_up` redirects to sign-in), OpenProject, XWiki | done (GitLab), planned (others) |
 | 2FA enforced for admins, Admin Mode (re-authentication for the admin area), no password authentication for Git over HTTPS (tokens only) | GitLab admin settings (`services/gitlab/README.md`) | done |
 | per-service read-only LDAP bind users; per-service access groups | lldap | planned |
+| lldap web UI behind an additional Caddy `basic_auth` gate (independent credential, hash outside the repository); LDAP port never published | the directory is the root of trust for all services and has neither MFA nor login rate limiting; before production: forward-auth with MFA or admin-network restriction (ADR-0011) | `proxy/Caddyfile`, `/srv/proxy/config/ldap-ui.auth` | planned (with the lldap stack) |
 | unused GitLab subsystems disabled (registry, Pages, KAS, Prometheus, outgoing mail) | `GITLAB_OMNIBUS_CONFIG` in `services/gitlab/compose.yaml`; verified with `gitlab-ctl status` | done |
 
 ## Secrets and data
