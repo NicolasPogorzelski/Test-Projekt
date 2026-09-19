@@ -47,8 +47,8 @@ The files named in "Where" are what the script writes.
 ## Applications
 | Measure | Where | Status |
 |---|---|---|
-| sign-up disabled | GitLab (admin settings), OpenProject, XWiki | planned (GitLab: runbook step after first login) |
-| 2FA enforced for admins (GitLab) | GitLab admin settings | planned |
+| sign-up disabled | GitLab (admin settings, verified: `/users/sign_up` redirects to sign-in), OpenProject, XWiki | done (GitLab), planned (others) |
+| 2FA enforced for admins, Admin Mode (re-authentication for the admin area), no password authentication for Git over HTTPS (tokens only) | GitLab admin settings (`services/gitlab/README.md`) | done |
 | per-service read-only LDAP bind users; per-service access groups | lldap | planned |
 | unused GitLab subsystems disabled (registry, Pages, KAS, Prometheus, outgoing mail) | `GITLAB_OMNIBUS_CONFIG` in `services/gitlab/compose.yaml`; verified with `gitlab-ctl status` | done |
 

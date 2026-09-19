@@ -37,16 +37,49 @@ sudo docker logs -f gitlab                  # "gitlab Reconfigured!" then servic
 ```
 Then, once `sudo docker ps` shows `(healthy)`:
 
-1. Read the generated root password:
-   `sudo cat /srv/gitlab/config/initial_root_password` (file is deleted after
-   24 h). Sign in at https://git.lab.test as `root`, change the password
-   (user menu → Edit profile → Password).
-2. Admin area → Settings → General → *Sign-up restrictions*: disable
-   "Sign-up enabled". Same page, *Sign-in restrictions*: enable
-   "Enforce two-factor authentication" (grace period 0 for admins).
-3. Clone test (workstation, CA imported):
-   `git clone https://git.lab.test/<group>/<project>.git` and
-   `git clone ssh://git@git.lab.test:2222/<group>/<project>.git`.
+1. Read the generated root password on the host — do not paste it anywhere:
+   `sudo grep -v '^#' /srv/gitlab/config/initial_root_password | grep -v '^$'`
+   (the file is deleted after 24 h). Sign in at https://git.lab.test as
+   `root`, change the password (avatar → Edit profile → Password).
+2. Admin → Settings → General (`/admin/application_settings/general`), each
+   section has its own *Save changes*:
+   - *New user account restrictions*: untick **Allow new user accounts**.
+     Minimum password length stays at the default 8: admins have enforced
+     MFA, and NIST SP 800-63B accepts 8 characters with a second factor;
+     LDAP users' passwords live in lldap, not here.
+   - *Sign-in restrictions*: untick **Allow password authentication for Git
+     over HTTP(S)** (personal access tokens only), tick **Enforce two-factor
+     authentication for administrators**, grace period `0`, tick **Enable
+     Admin Mode**. E-mail based options stay off (no mail server).
+   GitLab then forces the 2FA set-up for `root` on the next page load: TOTP
+   app, and store the recovery codes in the password manager.
+3. Create a private project (namespace `root`, initialise with a README) and
+   run the clone test below.
+
+Verified 2026-09-19: sign-up closed (`/users/sign_up` → 302 to sign-in),
+HTTPS clone with a token through the private CA, SSH clone and push on 2222
+with a dedicated key; the SSH host key fingerprint shown on first connect
+matched the one printed in the container's first-start log.
+
+## Workstation access to Git
+- HTTPS: git must trust the private CA; either import `pki/ca.crt` into the
+  system store or pass it per clone:
+  `git -c http.sslCAInfo=/path/to/pki/ca.crt clone https://git.lab.test/<ns>/<project>.git`.
+  Username is the GitLab user, password is a personal access token with the
+  scopes `read_repository`/`write_repository` (password authentication for
+  Git over HTTPS is disabled).
+- SSH: one dedicated key per person and purpose (`ssh-keygen -t ed25519 -f
+  ~/.ssh/gitlab-lab`), public key added under Edit profile → SSH Keys.
+  `~/.ssh/config` block, so plain `git clone git@git.lab.test:<ns>/<project>.git`
+  works:
+  ```
+  Host git.lab.test
+      Port 2222
+      IdentityFile ~/.ssh/gitlab-lab
+  ```
+  On first connect compare the host key fingerprint with
+  `ssh-keyscan -p 2222 -t ed25519 git.lab.test | ssh-keygen -lf -` run
+  from a trusted machine, or with the container's first-start log.
 
 ## Verification (evidence for docs/security.md)
 Run on the host after the first start; expected results in brackets.
@@ -85,6 +118,13 @@ also replays entries from before a container was recreated.
 
 ## Operations
 - Configuration change: edit `compose.yaml`, `sudo docker compose up -d`
-  (recreates the container, reconfigure runs, 2–3 min).
+  (recreates the container, reconfigure runs, 2–3 min). `docker logs`
+  replays the log files in the volume, so entries from before the recreate
+  appear again.
+- Lost root password ("forgot password" cannot work without mail):
+  `sudo docker exec -it gitlab gitlab-rake "gitlab:password:reset[root]"` —
+  Rails takes 30–60 s to load before it prompts twice for the new password
+  (https://docs.gitlab.com/security/reset_user_password/). 2FA stays
+  configured; a lost authenticator is covered by the recovery codes.
 - Upgrade: see ADR-0004 (backup → upgrade path tool → change the image tag).
 - Backup: `gitlab-secrets.json` + the three volumes (ADR-0008, day 3).
