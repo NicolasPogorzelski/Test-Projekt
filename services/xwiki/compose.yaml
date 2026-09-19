@@ -1,0 +1,83 @@
+# XWiki LTS in Tomcat with its own PostgreSQL 17 (ADR-0013). The XWiki image has
+# no non-root user (its entrypoint edits files inside the image), so the app runs
+# as root with every capability dropped; the database follows the OpenProject
+# pattern (non-root, cap_drop ALL, read-only).
+
+services:
+  db:
+    image: postgres:17.11-alpine
+    container_name: xwiki-db
+    restart: unless-stopped
+    user: "70:70"                                # image user "postgres" -> host UID 100070 on /srv/xwiki/db
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /var/run/postgresql
+      - /tmp
+    mem_limit: 1g
+    stop_grace_period: 30s
+    environment:
+      POSTGRES_USER: xwiki
+      POSTGRES_PASSWORD: ${XWIKI_DB_PASSWORD:?set in .env}
+      POSTGRES_DB: xwiki
+      # from XWiki's official compose file: PostgreSQL 17 builtin locale provider (architecture.md)
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale-provider=builtin --locale=C.UTF-8"
+    volumes:
+      - /srv/xwiki/db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U xwiki -d xwiki"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+    networks:
+      - xwiki_internal
+
+  xwiki:
+    image: xwiki:17.10.13-postgres-tomcat        # pinned; LTS branch (architecture.md)
+    container_name: xwiki                        # DNS name the proxy uses: reverse_proxy xwiki:8080
+    restart: unless-stopped
+    init: true                                   # as in XWiki's compose file: reaps Tomcat's child processes
+    # No "user:": the entrypoint writes into the image on first start. Root without
+    # capabilities instead (ADR-0013); isolation from the host via userns-remap.
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 2560m                             # JVM heap 1.5 GiB + metaspace/Solr/threads (ADR-0013)
+    environment:
+      DB_HOST: db
+      DB_DATABASE: xwiki
+      DB_USER: xwiki
+      DB_PASSWORD: ${XWIKI_DB_PASSWORD:?set in .env}   # hex only: lands in a JDBC URL
+      JAVA_OPTS: "-Xmx1536m"                     # setenv.sh appends the remaining defaults
+    volumes:
+      # page history lives in the DB; attachments, Solr index and config copies here
+      - /srv/xwiki/data:/usr/local/xwiki
+      # RemoteIpValve (ADR-0013); read-only is fine here, Tomcat only reads the file
+      - ./tomcat/server.xml:/usr/local/tomcat/conf/server.xml:ro
+      # JVM trust store = image cacerts + lab.test CA, built once on the host (README)
+      - /srv/xwiki/cacerts:/opt/java/openjdk/lib/security/cacerts:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost:8080/"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 120s                         # first start unpacks the WAR and initialises the wiki
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - edge                                     # reached by Caddy; outbound to extensions.xwiki.org
+      - xwiki_internal
+      - ldap                                     # LDAP authenticator extension (internal)
+
+networks:
+  edge:
+    external: true                               # created by bootstrap, shared by all stacks
+  ldap:
+    external: true
+  xwiki_internal:
+    internal: true                               # db: no route to anywhere else
