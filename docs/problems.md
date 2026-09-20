@@ -363,3 +363,35 @@ P-015 shows what that habit costs.
   change — the added line is an idempotent `rm -f`. Lesson: every "first
   start" side effect of a product is a candidate for stale state after a
   restore; walk the config volume after the test, not just the checklist.
+
+## P-021 — GitLab refuses the External wiki URL: "Requests to the local network are not allowed"
+- **Symptom:** saving the External wiki integration with
+  `https://wiki.lab.test/bin/view/Projects/` failed with the message above,
+  although GitLab never calls that URL — it only renders it as a link.
+- **Verification:** the same message GitLab shows for a webhook to a private
+  address; inside the GitLab container `wiki.lab.test` resolves to Caddy's
+  address on the Docker network (the alias in `proxy/compose.yaml`); after
+  adding `wiki.lab.test` to Admin Area → Settings → Network → Outbound
+  requests → allowlist, the save succeeded.
+- **Cause:** GitLab's URL validator applies the outbound-request policy to
+  *every* integration URL, independent of whether the integration makes
+  requests; the assumption in ADR-0014's first draft ("a plain link needs no
+  exception") was wrong.
+- **Fix:** allowlist entry per name (`pm.lab.test`, `wiki.lab.test`); the
+  blanket "allow local network" switch stays off. ADR-0014 amended.
+
+## P-022 — The second seeded OpenProject project kept the wiki module
+- **Symptom:** the database check for the documentation hub listed
+  `your-scrum-project | wiki` although the docs stated the wiki module was
+  disabled (ADR-0003).
+- **Verification:** `enabled_modules` join `projects` where `name='wiki'`
+  returned one row for the project the seeder creates next to
+  `demo-project`; the day-2 step had been done in `demo-project` only.
+- **Cause:** modules are a per-project setting and the instance default
+  ("Default enabled modules for new projects") still contained Wiki, so both
+  seeded projects and any new one started with it.
+- **Fix:** instance default without Wiki (and with GitLab), wiki disabled in
+  `your-scrum-project`, new projects private by default; verified: zero
+  projects with the module, `default_projects_public = 0`. Lesson: "disabled"
+  claims about per-project settings need a query over all projects, not a
+  look at one.

@@ -49,6 +49,7 @@ The files named in "Where" are what the script writes.
 ## Applications
 | Measure | Where | Status |
 |---|---|---|
+| OpenProject: new projects private by default, default modules without Wiki (XWiki is the documentation tool, ADR-0003) and with GitLab; no project has the wiki module (verified in the database, P-022) | Administration → Projects → New project; per-project Modules | done (day 3) |
 | sign-up disabled; XWiki additionally denies anonymous reading | GitLab (admin settings, verified: `/users/sign_up` redirects to sign-in), OpenProject (self-registration disabled), XWiki (Register and View denied for unregistered users — both URLs redirect to login); LDAP is the only entry for non-admins everywhere | done |
 | 2FA enforced for admins, Admin Mode (re-authentication for the admin area), no password authentication for Git over HTTPS (tokens only) | GitLab admin settings (`services/gitlab/README.md`) | done |
 | per-service read-only LDAP bind users (`lldap_strict_readonly`); per-service access groups (`git_user`, `wiki_user`, `pm_user`) | lldap; GitLab, OpenProject and XWiki each verified with a member and a non-member of their group | done |
@@ -138,12 +139,13 @@ matters, why it was deferred, and where the decision is recorded.
 3. **2FA for LDAP users in GitLab** (currently enforced for administrators
    only): one admin setting; deferred so that test users could be created
    without TOTP enrolment. — `services/gitlab/README.md`.
-4. **XWiki → OpenProject macro** (work-package tables in wiki pages): needs
-   an OAuth application in OpenProject plus the macro extension in XWiki;
-   deferred behind the backup/restore test. The other half of this item,
-   the **GitLab → OpenProject webhook**, was built on day 3 with a
-   host-allowlist instead of "allow local network" and a three-permission
-   integration user — ADR-0014, `docs/integration.md` §2, P-018.
+4. **Data-level XWiki ↔ OpenProject integration** (work-package tables
+   rendered inside wiki pages): the only candidate, the `xwiki-contrib`
+   OpenProject macro, has never been released (`docs/integration.md` §3), so
+   this stays a gap until a maintained extension exists. Built instead on
+   day 3: the GitLab → OpenProject webhook (host allowlist, three-permission
+   user — ADR-0014, P-018) and the documentation hub (GitLab External wiki,
+   OpenProject `Documentation` attribute, XWiki project pages).
 5. **Minimal capability list for GitLab** (`cap_drop: ALL` + explicit
    `cap_add`) instead of Docker's default set; GitLab documents no minimal
    set, so the list must be derived by trial at 3–5 min per start.

@@ -40,8 +40,13 @@ seeded default; the first sign-in forces a password change).
    disabled**.
 3. Administration → System settings → General: check *Host name*
    `pm.lab.test`, *Protocol* HTTPS.
-4. Administration → Projects → *New project settings* / per project: disable
-   the **Wiki** module (XWiki is the single documentation tool, ADR-0003).
+4. Administration → Projects → **New project**: "New projects are public by
+   default" **off**; default modules: **Wiki off**, **GitLab on** (ADR-0003,
+   `docs/integration.md`). Then check *every* existing project's
+   *Project settings → Modules* — the seeder creates two demo projects and
+   both start with the wiki on (P-022). Verify:
+   `select p.identifier, em.name from enabled_modules em join projects p on p.id=em.project_id where em.name='wiki';`
+   must return no rows.
 5. LDAP (30-minute time-box, ADR-0012 §4): Administration → Authentication →
    LDAP authentication → *New*:
    - Name `lldap`, Host `lldap`, Port `3890`, Connection encryption *none*

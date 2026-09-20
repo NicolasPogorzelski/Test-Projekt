@@ -169,6 +169,18 @@ the upgrade path tool (ADR-0004) and never skip required stops; a set can only
 be restored onto the tag it was taken with (`restore.sh` enforces this).
 PostgreSQL major upgrades: dump-based restore (`docs/backup-restore.md`).
 
+### Project onboarding
+
+For every new project, in this order: create the XWiki page
+`Projects/<name>` (any member can, e.g. as the project lead); create the
+GitLab project — it inherits the *External wiki* link to the XWiki index,
+set the project's own page under *Settings → Integrations → External wiki*
+and disable the built-in wiki under *Settings → General → Visibility*; create
+the OpenProject project — it inherits the module defaults (GitLab on, Wiki
+off), set the `Documentation` attribute on the overview to the XWiki page,
+add the `gitlab-integration` user as member with role `GitLab Integration`
+and register the webhook in the GitLab project (`docs/integration.md` §2, §3).
+
 ### On- and offboarding
 
 Users exist only in lldap; membership in `git_user`, `wiki_user`, `pm_user`

@@ -28,7 +28,11 @@ Two things make this a security decision rather than a click-through:
   webhooks and integrations". Instead list exactly `pm.lab.test` under
   "Local IP addresses and domain names that hooks and integrations can
   access" (Admin Area → Settings → Network → Outbound requests), keep
-  DNS-rebinding protection on. The webhook therefore leaves GitLab through
+  DNS-rebinding protection on. The same list later received `wiki.lab.test`
+  for the External wiki integration (`docs/integration.md` §3): GitLab
+  validates every integration URL against this policy, not only the ones it
+  calls (P-021). Still two names, still no blanket exception. The webhook
+  therefore leaves GitLab through
   the same door a browser uses: Caddy, TLS, certificate checked against the
   lab CA that already sits in `/etc/gitlab/trusted-certs/` (P-010). Every
   other internal address stays blocked.
