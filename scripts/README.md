@@ -40,7 +40,12 @@ script takes the calling user from `SUDO_USER` and writes it into
    rebuild.
 6. `/etc/docker/daemon.json` is written **before** the packages are installed:
    the package postinst starts `dockerd`, which reads the file on its first
-   start, so no image is ever stored in the unmapped location.
+   start, so no image is ever stored in the unmapped location. Besides the
+   remap it sets log rotation, `live-restore`, `icc: false` and
+   `no-new-privileges: true` (CIS Docker Benchmark 2.2 / 2.14).
+6a. `auditd` with watch rules for the Docker binaries, sockets, state and
+   configuration (`/etc/audit/rules.d/docker.rules`, key `docker`; CIS
+   1.1.3–1.1.18). Only existing paths are watched.
 7. `/etc/sudoers.d/docker-readonly` (checked with `visudo -c`, mode 0440).
 8. `/srv` directory layout with the owners the stacks expect.
 9. Docker networks `edge` (bridge, publishes ports) and `ldap` (`--internal`).

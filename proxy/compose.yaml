@@ -3,6 +3,7 @@ services:
     image: caddy:2.11.4-alpine          # pinned; alpine = small image
     container_name: caddy
     restart: unless-stopped              # survives reboots, respects manual stop
+    mem_limit: 128m                      # Caddy needs ~30 MB; a limit keeps a leak from starving the host (CIS 5.11)
     user: "1000:1000"                    # non-root in the container -> host UID 101000
     cap_drop:
       - ALL                              # drop every kernel capability ...

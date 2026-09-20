@@ -19,6 +19,8 @@ The files named in "Where" are what the script writes.
 | unattended-upgrades enabled for Debian origins (daily timers) | timely security patches from Debian | `/etc/apt/apt.conf.d/20auto-upgrades`, `50unattended-upgrades` (package default) | A.8.8 technical vulnerabilities | done |
 | Docker CE repository key scoped with `Signed-By`; key fingerprint compared with the value pinned in `bootstrap.sh` on every run | limit reach of the third-party key; detect a swapped key at the download URL | `/etc/apt/keyrings/docker.asc`, `/etc/apt/sources.list.d/docker.sources` | A.8.19 software installation | done (day 1: manual `gpg --show-keys`; since day 2: checked by the script) |
 | `userns-remap` with a fixed subordinate range (`dockremap:100000:65536`) | container root is unprivileged on the host; fixed range keeps bind-mount owners reproducible (P-008) | `/etc/docker/daemon.json`, `/etc/subuid`, `/etc/subgid` | A.8.9 configuration management | done |
+| `icc: false` and `no-new-privileges: true` as daemon defaults | a container started without `networks:` is isolated instead of joined to every other on the default bridge; every container inherits the no-setuid rule the stacks set individually | `/etc/docker/daemon.json` (bootstrap) | A.8.9 configuration management | done (day 3, CIS 2.2 / 2.14) |
+| auditd watch rules for the Docker binaries, sockets, state and configuration (`-k docker`) | changes to `daemon.json`, the socket or `/var/lib/docker` leave a trace (`ausearch -k docker`) | `/etc/audit/rules.d/docker.rules` (bootstrap) | A.8.15 logging | done (day 3, CIS 1.1.3–1.1.18) |
 | Docker used via `sudo`; no `docker` group membership; read-only sudoers rule for unattended checks | `docker` group is root-equivalent without password or audit trail | `/etc/sudoers.d/docker-readonly` | A.8.2 privileged access rights, A.8.15 logging | done |
 | apt pin `5:29.*` (priority 990) for `docker-ce` and `docker-ce-cli` + Docker origin in unattended-upgrades | automatic security patches, manual major upgrades of the engine. `containerd.io` and the buildx/compose plugins have their own version schemes, so a `5:29.*` pin would never match them; they follow normal updates (day 1 listed them in the pin without effect) | `/etc/apt/preferences.d/docker-ce`, `/etc/apt/apt.conf.d/52unattended-upgrades-docker` | A.8.8 technical vulnerabilities | done |
 | Container log rotation (10 MB × 3 per container), `live-restore` | a full disk stops every service; daemon restarts must not stop containers | `/etc/docker/daemon.json` | A.8.6 capacity management | done |
@@ -92,10 +94,31 @@ the restore test, so the numbers describe the state a reinstall produces):
 - **Sign-up closed everywhere** (`/users/sign_up`, XWiki `register`,
   `/account/register` all redirect to the login); lldap UI answers `401`
   without the gate credential.
-- **`docker-bench-security`: not run** within the time-box. It is the next
-  verification step; expected findings are the documented ones (GitLab and
-  XWiki as container root, no user namespace for the docker group — accepted in
-  ADR-0010/0013) and they should be triaged into accepted / fixed / gap here.
+- **`docker-bench-security` (CIS Docker Benchmark 1.6.0, tool v1.6.0)**, run on
+  the rebuilt host on 2026-09-20 as `sudo bash docker-bench-security.sh`
+  (**not** `sh`: the script uses bash syntax and under dash seven daemon
+  checks are mis-evaluated — 2.9 "user namespace support" showed WARN
+  although `userns-remap` is active; P-019). Score before triage **12/117**,
+  after the three fixes below **44/117**. The score counts only PASS; every
+  remaining WARN is classified here:
+
+  | Check | Finding | Triage | Reference |
+  |---|---|---|---|
+  | 1.1.3–1.1.18 | no audit rules for Docker files | **fixed** — `auditd` + `/etc/audit/rules.d/docker.rules` via `bootstrap.sh` | Host table |
+  | 2.2 | inter-container traffic on the default bridge | **fixed** — `icc: false`; the stacks use only user-defined networks (5.30 PASS), so nothing changes for them | Host table |
+  | 2.14 | no daemon-wide `no-new-privileges` | **fixed** — daemon default; already set per container (5.26 PASS) | Host table |
+  | 5.11 | `caddy` without memory limit | **fixed** — `mem_limit: 128m` | `proxy/compose.yaml` |
+  | 1.1.1 | no separate partition for `/var/lib/docker` | accepted — single-disk cloud image; a volume is a provisioning choice, not a container one | — |
+  | 4.1, 5.13 | `gitlab`, `xwiki` run as root; `gitlab`, `xwiki`, `openproject`(+worker) with writable root fs | accepted — images require it; compensated by `userns-remap`, `cap_drop`, `no-new-privileges` | ADR-0010, ADR-0012, ADR-0013 |
+  | 5.7 | sshd inside `gitlab` | accepted — Git over SSH on :2222 is the product function; host sshd is separate | ADR-0004 |
+  | 5.8, 5.9, 5.14 | ports 80/443/2222 published on `0.0.0.0` | accepted — single-purpose host behind the provider firewall (port scan above); binding to one address is an extension | Verification (scan) |
+  | 4.6, 5.27 | no `HEALTHCHECK` in upstream images; none at runtime for `caddy`, `openproject-worker`, `openproject-cache` | accepted — compose healthchecks exist where an endpoint exists; Caddy's admin API is disabled by design, worker and memcached expose no probe | compose files |
+  | 5.12 | no CPU limits | accepted for a single-tenant host; `cpus:` per service is a ten-minute extension | — |
+  | 5.29 | no PIDs limit | **gap** — `pids_limit` per service (e.g. 4096 gitlab, 512 others) needs a restart of every stack; scheduled after the hand-in, not on the day of the restore test | — |
+  | 2.12 | no authorization plugin | gap — one admin, no shared daemon; relevant once several people hold `sudo docker` | — |
+  | 2.13 | no remote logging | gap — no log receiver in scope; `json-file` with rotation today | — |
+  | 2.16 | userland proxy enabled | gap — disabling changes how published ports are wired (iptables only); untested here, hence not flipped on hand-in day | — |
+  | 4.5 | Docker Content Trust off | gap — the upstream images are not signed with DCT; pinned tags are the substitute | ADR-0001 |
 
 ## Known gaps / extension steps (in order of value)
 Deliberately not built within the three-day time-box; each item names why it

@@ -326,3 +326,21 @@ P-015 shows what that habit costs.
   webhook receiver means "accepted", not "done" — verify the effect in the
   data; and when a query returns nothing, check the join key before trusting
   the absence.
+
+## P-019 — docker-bench under `sh` reports false WARNs
+- **Symptom:** the first benchmark run (started as `sudo sh
+  docker-bench-security.sh`, the invocation the project README shows)
+  printed `[[: not found` several times and reported `2.9 Enable user
+  namespace support: WARN` — on a host whose `docker info` shows
+  `name=userns` and whose bootstrap self-test checks exactly that.
+- **Verification:** the same run with `sudo bash docker-bench-security.sh`
+  reported 2.9 as PASS and changed the outcome of 2.4, 2.5 and 2.12 as well;
+  the `[[` lines disappeared.
+- **Cause:** the script declares `#!/bin/sh` but several checks use bash-only
+  `[[ … ]]`; under Debian's `sh` (dash) those tests fail and the check falls
+  through to WARN. Also seen: `error: no such object: 62.9MB` — the script
+  parses the SIZE column of `docker images` as image IDs on Docker 29;
+  harmless for the results.
+- **Fix:** run it with `bash`; recorded in the verification section. Lesson:
+  a security scanner is a program like any other — read its errors before
+  reading its findings.
