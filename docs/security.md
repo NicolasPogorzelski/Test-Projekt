@@ -115,15 +115,12 @@ matters, why it was deferred, and where the decision is recorded.
 3. **2FA for LDAP users in GitLab** (currently enforced for administrators
    only): one admin setting; deferred so that test users could be created
    without TOTP enrolment. — `services/gitlab/README.md`.
-4. **Tool-to-tool links: GitLab → OpenProject webhook and the XWiki →
-   OpenProject macro** (commits, merge requests and pipelines shown on
-   work packages; work-package tables in wiki pages). Today the three
-   products share only their identity (lldap). Deferred behind the
-   backup/restore test: both are UI configuration on top of a running
-   system and can be added at any time (webhook ~30 min, needs the
-   private CA in `/etc/gitlab/trusted-certs/`; macro via Extension
-   Manager plus an OAuth application in OpenProject).
-   — `docs/integration.md` §2, §3.
+4. **XWiki → OpenProject macro** (work-package tables in wiki pages): needs
+   an OAuth application in OpenProject plus the macro extension in XWiki;
+   deferred behind the backup/restore test. The other half of this item,
+   the **GitLab → OpenProject webhook**, was built on day 3 with a
+   host-allowlist instead of "allow local network" and a three-permission
+   integration user — ADR-0014, `docs/integration.md` §2, P-018.
 5. **Minimal capability list for GitLab** (`cap_drop: ALL` + explicit
    `cap_add`) instead of Docker's default set; GitLab documents no minimal
    set, so the list must be derived by trial at 3–5 min per start.

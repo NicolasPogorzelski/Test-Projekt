@@ -49,6 +49,33 @@ scripts/         bootstrap.sh (host preparation), backup.sh, restore.sh
 5. Start the stacks in this order: `proxy`, `lldap`, `gitlab`, `xwiki`, `openproject`.
 6. Configure LDAP in each service and the integrations (`docs/integration.md`).
 
+## Evaluating this repository
+
+Three ways, from cheapest to most complete:
+
+1. **Read.** The decisions are in [`docs/adr/`](docs/adr/) (one file per
+   non-obvious choice, with the alternatives), the problems and their root
+   causes in [`docs/problems.md`](docs/problems.md), the security measures
+   and what was verified from outside in [`docs/security.md`](docs/security.md),
+   and the measured restore test — a rebuilt VPS back to a working system in
+   21 minutes — in [`docs/backup-restore.md`](docs/backup-restore.md).
+2. **Reproduce on a fresh Debian 13 host** (cloud VPS with 8 vCPU / 16 GB,
+   about 0.13 EUR/h at the provider used here): the "Quick start" above.
+   `bootstrap.sh` prepares the host in about two minutes; the first start of
+   all five stacks including the LDAP set-up takes one to two hours because
+   secrets and directory contents are deliberately created by hand, not by
+   scripts in the repository.
+3. **Run it elsewhere.** The supported target is Debian 13 — physical,
+   virtual or cloud. On macOS or Windows, use a Debian 13 VM (Multipass, UTM,
+   Hyper-V; 16 GB RAM for the VM) and follow the same path; Docker Desktop is
+   out of scope because the design relies on Linux user-namespace remapping
+   and numeric bind-mount ownership, which do not carry through the Desktop
+   VM. Other Linux distributions: the compose stacks, `backup.sh` and
+   `restore.sh` are distribution-independent; only `bootstrap.sh` is the
+   Debian implementation of the host requirements listed in
+   [`docs/architecture.md`](docs/architecture.md#host-requirements) — porting
+   means replacing its package-manager steps (not exercised in the time-box).
+
 ## Documentation
 
 - [Architecture](docs/architecture.md) — components, networks, data flows, threat model

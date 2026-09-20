@@ -71,10 +71,31 @@ enabled per project; GitLab side — project webhook to
 `https://pm.lab.test/webhooks/gitlab?key=<token>` with push, comment, issue,
 merge request and pipeline events, SSL verification **enabled** (requires the
 private CA in `/etc/gitlab/trusted-certs/`).
-**Not built** within the three-day time-box: the shared identity (§1) was
-verified for all three services first; the webhook is an extension step
-(`docs/security.md`, "Known gaps", item 4). The paragraph above is the
-planned path.
+**Built and verified 2026-09-20** on the rebuilt host, after the restore
+test (ADR-0014 for the two security decisions: GitLab's outbound allowlist
+holds only `pm.lab.test` instead of "allow local network"; the token belongs
+to a local user with three permissions).
+
+Configuration, in this order:
+1. OpenProject: role `GitLab Integration` (*Show GitLab content*, *View work
+   packages*, *Add comments*), local user `gitlab-integration` (no LDAP, no
+   admin), GitLab module enabled in the project, user added as member with
+   that role, API token generated as that user.
+2. GitLab, Admin Area → Settings → Network → Outbound requests: "Allow
+   requests to the local network" **off**, `pm.lab.test` in the allowlist,
+   DNS-rebinding protection on.
+3. GitLab project → Settings → Webhooks: URL
+   `https://pm.lab.test/webhooks/gitlab?key=<token>`, events push, comments,
+   work items, merge requests, pipelines; SSL verification on; test delivery
+   → `HTTP 200`.
+
+Verification: a merge request in `smoke-test` with `OP#37` in title and
+description appears on work package #37, tab *GitLab*, first as `ready`
+(open) and after merging as `merged`; every delivery is logged by
+OpenProject as `POST /webhooks/gitlab … status=200 user=<integration user>`
+(`docker logs openproject`). The first attempts linked nothing although
+every delivery returned 200 — see P-018 for the permission the role was
+missing and how the database showed it.
 
 ## 3. XWiki ↔ OpenProject
 `xwiki-contrib/openproject` (LGPL) macro: work package lists/tables in wiki
