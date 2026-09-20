@@ -209,6 +209,8 @@ restore_gitlab() {
     compose gitlab restart
     wait_for gitlab healthy 600 || die "gitlab did not become healthy after restore"
     docker exec gitlab gitlab-rake gitlab:check SANITIZE=true || warn "gitlab:check reported problems - read the output above"
+    # written by the first start on the empty database, invalid once the backup is in (P-020)
+    rm -f "$SRV/gitlab/config/initial_root_password"
 }
 
 verify() {

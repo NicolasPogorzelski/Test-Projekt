@@ -46,7 +46,7 @@ scripts/         bootstrap.sh (host preparation), backup.sh, restore.sh
    Docker networks — see [`scripts/README.md`](scripts/README.md)).
 3. Copy `.env.example` to `.env` in each stack directory and fill in secrets.
 4. Copy the service certificates to `/srv/proxy/certs/`.
-5. Start the stacks in this order: `proxy`, `lldap`, `gitlab`, `xwiki`, `openproject`.
+5. Start the stacks in this order: `proxy`, `lldap`, `gitlab`, `openproject`, `xwiki`.
 6. Configure LDAP in each service and the integrations (`docs/integration.md`).
 
 ## Evaluating this repository

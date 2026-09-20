@@ -66,9 +66,10 @@ restarts stopped containers even after a failure):
 8. prune: keep the 7 newest `.tar.age` (sorted by name), remove stale
    `.partial` leftovers
 
-Measured on the reference host (2026-09-20, three runs): 1 min 27–33 s wall
-clock, 64 MB per set; service interruption per application 1–45 s
-(OpenProject longest because of the seeder).
+Measured on 2026-09-20, six runs on two hosts (three by hand on the source
+host, three on the rebuilt host including one through `backup.service`):
+1 min 17–33 s wall clock, 64 MB per set; service interruption per application
+1–45 s (OpenProject longest because of the seeder).
 
 Off-host copy (3-2-1), pulled from the workstation over SSH — the admin is in
 group `backup`, so no root is involved:
@@ -117,7 +118,10 @@ XWiki (same) → GitLab (secrets, host keys and archive in place, start,
 The decrypted set is removed at the end.
 
 After the script: update the workstation's `/etc/hosts` entry for the four
-names to the new address, then the functional checklist below.
+names to the new address, then the functional checklist below. Note that
+GitLab's first start on the empty database writes a fresh
+`/srv/gitlab/config/initial_root_password`; the restore replaces the database
+afterwards, so that file is stale — `restore.sh` removes it (P-020).
 
 ## Restore test protocol
 | Date | Host state | Steps | Duration (RTO) | Result | Findings |

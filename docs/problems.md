@@ -344,3 +344,22 @@ P-015 shows what that habit costs.
 - **Fix:** run it with `bash`; recorded in the verification section. Lesson:
   a security scanner is a program like any other — read its errors before
   reading its findings.
+
+## P-020 — A stale `initial_root_password` reappears after a restore
+- **Symptom:** the final audit of the rebuilt host found
+  `/srv/gitlab/config/initial_root_password` (600, container root), although
+  the source host had deleted its copy before the first backup and the file
+  is not part of any set.
+- **Verification:** file timestamp = the first GitLab start on the rebuilt
+  host (09:24 UTC), i.e. before `gitlab-backup restore` ran (09:27–09:28); the
+  restored database carries the original root password, so the string in
+  the file does not open anything.
+- **Cause:** `restore.sh` has to start GitLab once on an empty database
+  before it can restore into it (the restore tool runs inside the container);
+  that first start seeds a root password and writes the file, and the
+  restore does not know about it.
+- **Fix:** `restore.sh` removes the file after the restore; runbook note in
+  `docs/backup-restore.md`. Not exercised by a full restore run since the
+  change — the added line is an idempotent `rm -f`. Lesson: every "first
+  start" side effect of a product is a candidate for stale state after a
+  restore; walk the config volume after the test, not just the checklist.

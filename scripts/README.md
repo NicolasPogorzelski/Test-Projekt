@@ -63,7 +63,18 @@ Every step checks before it acts and prints `skip` when nothing has to change.
 Configuration files are compared byte by byte (and by mode); a changed
 `daemon.json` restarts Docker only if the daemon was already installed
 (`live-restore` keeps running containers up). Verified on 2026-09-19: a second
-run on the prepared host reported only `skip` lines and 12× `PASS`; on 2026-09-20 a fresh host went through every step and a re-run on it reported only `skip` (14× `PASS` with the day-3 additions).
+run on the prepared host reported only `skip` lines and 12× `PASS`; on 2026-09-20 a fresh host went through every step and a re-run on it reported only `skip` (16× `PASS` with the day-3 additions).
+
+### Why a shell script and not Ansible
+
+One host, one operating system, no control node: an idempotent script that
+runs in two minutes is the smallest tool that covers the job, and it is
+readable in one sitting. Ansible earns its keep with several hosts or
+several distributions; the migration path is straightforward — each step
+here is one role (`ssh_hardening`, `docker_userns`, `srv_layout`,
+`backup_timer`), `backup.sh` and `restore.sh` stay as they are and get
+deployed by a role. `docs/architecture.md`, "Host requirements", is the
+specification either tool implements.
 
 ### What it does not do
 
