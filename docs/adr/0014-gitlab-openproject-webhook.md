@@ -47,7 +47,7 @@ Two things make this a security decision rather than a click-through:
   `200` and nothing happens (P-018). Its API token is the `key` in the
   webhook URL; it lives in the password manager and, encrypted, in GitLab's
   database.
-- **Events:** push, comments, issues, merge requests, pipelines; SSL
+- **Events:** push, comments, work items (GitLab 19's name for issue events), merge requests, pipelines; SSL
   verification enabled.
 
 ## Alternatives

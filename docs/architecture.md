@@ -92,6 +92,11 @@ one. A Debian 13 VM on those systems runs the repository unchanged.
   (3) an insider with a valid account.
 - **Not in scope:** the Hetzner hypervisor, physical security, denial of
   service, the workstation.
+- **Trust model:** defence in depth with one identity source — not a Zero
+  Trust architecture. Two zones are trusted: the internal Docker network
+  `ldap` (plain LDAP) and the Docker address pool for proxy headers. The
+  assessment and the target architecture are in ADR-0006, "Trust model
+  assessment".
 - **Main controls:** SSH key-only access; Cloud Firewall; single TLS entry
   point; no published backend ports; `userns-remap` and container hardening
   (limits attacker 2); per-service read-only LDAP bind users and per-service
