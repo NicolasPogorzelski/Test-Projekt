@@ -8,8 +8,8 @@ set -euo pipefail
 # Turns a fresh host into the state described in docs/security.md "Host":
 # sshd hardening, unattended-upgrades incl. Docker origin, Docker CE from the
 # Docker repository (key fingerprint verified), apt pin, userns-remap with a
-# fixed subordinate range, read-only sudoers rule, /srv layout, Docker networks,
-# group backup for the admin, nightly backup timer.
+# fixed subordinate range, auditd rules for Docker, read-only sudoers rule,
+# /srv layout, Docker networks, group backup for the admin, nightly backup timer.
 # Every step checks first and only acts when needed, so re-running is safe and
 # reports "skip" everywhere on a host that is already prepared.
 #
@@ -210,7 +210,9 @@ install_docker() {
   "userns-remap": "$REMAP_USER",
   "log-driver": "json-file",
   "log-opts": { "max-size": "10m", "max-file": "3" },
-  "live-restore": true
+  "live-restore": true,
+  "icc": false,
+  "no-new-privileges": true
 }
 EOF
     then daemon_changed=1; fi
@@ -294,6 +296,25 @@ create_networks() {
     fi
 }
 
+configure_docker_audit() {
+    log "auditd rules for Docker (CIS Docker Benchmark 1.1.3-1.1.18)"
+    # Every write to the daemon's binaries, sockets, state and configuration is
+    # recorded (ausearch -k docker). Only paths that exist are watched: auditctl
+    # refuses a -w rule for a missing file, and the set differs between hosts.
+    ensure_pkgs auditd
+    local p rules=""
+    for p in /usr/bin/dockerd /usr/bin/containerd /usr/bin/containerd-shim-runc-v2 /usr/bin/runc \
+             /run/containerd /run/containerd/containerd.sock /var/lib/docker /etc/docker \
+             /etc/docker/daemon.json /etc/default/docker /etc/containerd/config.toml \
+             /usr/lib/systemd/system/docker.service /usr/lib/systemd/system/docker.socket; do
+        [[ -e "$p" ]] && rules+="-w $p -p wa -k docker"$'\n'
+    done
+    if write_if_changed /etc/audit/rules.d/docker.rules 640 <<<"$rules"; then
+        augenrules --load >/dev/null
+        log "audit rules loaded"
+    fi
+}
+
 install_tools() {
     log "tools"
     ensure_pkgs git rsync age          # git: clone via deploy key; rsync: off-host copy; age: backup encryption
@@ -368,6 +389,8 @@ self_test() {
     t "$ADMIN_USER not in group docker" [ "$(id -nG "$ADMIN_USER" | tr ' ' '\n' | grep -cx docker)" = 0 ]
     t "$ADMIN_USER in group backup" grep -qw backup <<<"$(id -nG "$ADMIN_USER")"
     t "backup.timer active" systemctl is-active --quiet backup.timer
+    t "auditd watches /var/lib/docker" grep -q '/var/lib/docker' <<<"$(auditctl -l)"
+    t "docker: icc disabled, no-new-privileges default" grep -qE '"icc": false' /etc/docker/daemon.json
     sshd_cfg="$(sshd -T)"
     t "sshd: passwordauthentication no" grep -qx 'passwordauthentication no' <<<"$sshd_cfg"
     t "sshd: permitrootlogin no" grep -qx 'permitrootlogin no' <<<"$sshd_cfg"
@@ -386,6 +409,7 @@ configure_unattended_upgrades
 add_docker_repo
 prepare_userns
 install_docker
+configure_docker_audit
 configure_sudoers
 create_srv_layout
 create_networks
