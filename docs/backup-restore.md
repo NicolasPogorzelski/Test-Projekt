@@ -85,8 +85,12 @@ T="$(mktemp -d)"; age -d -i <identity file> ~/backups/<host>/<stamp>.tar.age | t
   && (cd "$T"/<stamp> && sha256sum -c SHA256SUMS); rm -rf "$T"
 ```
 
-RPO with a manual daily run: up to 24 h. The systemd timer is an extension
-step (ADR-0008); until it exists the run is a runbook task.
+Scheduling: `bootstrap.sh` installs `backup.service` (oneshot, runs the script
+as root) and `backup.timer` (`OnCalendar=*-*-* 03:00:00 UTC`,
+`RandomizedDelaySec=15min`, `Persistent=true` so a run missed while the host
+was down happens after boot). RPO is therefore up to 24 h. Useful commands:
+`systemctl list-timers backup.timer`, `sudo systemctl start backup.service`
+(run now), `sudo journalctl -u backup.service -n 50` (last run's log).
 
 ## Restore procedure
 

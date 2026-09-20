@@ -44,8 +44,11 @@ script takes the calling user from `SUDO_USER` and writes it into
 7. `/etc/sudoers.d/docker-readonly` (checked with `visudo -c`, mode 0440).
 8. `/srv` directory layout with the owners the stacks expect.
 9. Docker networks `edge` (bridge, publishes ports) and `ldap` (`--internal`).
-10. `git` and `rsync`.
-11. Self-test: prints one `PASS`/`FAIL` line per measure and exits non-zero on
+10. `git`, `rsync` and `age`.
+11. Adds the admin to Debian's `backup` group (read access to the encrypted
+    sets without root) and installs `backup.service` + `backup.timer`
+    (nightly `backup.sh`, `docs/backup-restore.md`).
+12. Self-test: prints one `PASS`/`FAIL` line per measure and exits non-zero on
     any failure. The output is the evidence for the status column in
     `docs/security.md`.
 
@@ -55,7 +58,7 @@ Every step checks before it acts and prints `skip` when nothing has to change.
 Configuration files are compared byte by byte (and by mode); a changed
 `daemon.json` restarts Docker only if the daemon was already installed
 (`live-restore` keeps running containers up). Verified on 2026-09-19: a second
-run on the prepared host reported only `skip` lines and 12× `PASS`.
+run on the prepared host reported only `skip` lines and 12× `PASS`; on 2026-09-20 a fresh host went through every step and a re-run on it reported only `skip` (14× `PASS` with the day-3 additions).
 
 ### What it does not do
 

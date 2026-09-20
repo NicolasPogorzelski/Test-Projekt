@@ -67,5 +67,8 @@ Task item 3: backups and reinstallation must be as simple as possible.
 - **GitLab set contents.** `gitlab-secrets.json`, `gitlab.rb` and the SSH host
   keys are copied next to the `gitlab-backup` archive (P-014).
 - **Retention** counts encrypted sets by name (7), never by mtime.
-- Still deferred: systemd timer (runbook task until then), restic/borg,
-  off-site storage.
+- **Scheduling — built.** `bootstrap.sh` writes `backup.service` +
+  `backup.timer` (daily 03:00 UTC, persistent, 15 min jitter); the unit is
+  generated on the host because it contains the checkout path.
+- Still deferred: restic/borg (deduplication, retention policies), off-site
+  storage beyond the workstation.
