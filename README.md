@@ -100,6 +100,7 @@ Log in as `<admin>` (verify that this works before the next step — the script
 disables root and password logins), then:
 
 ```
+sudo apt-get update && sudo apt-get install -y git   # the cloud image ships without git (P-015)
 git clone <this repository> ~/Test-Projekt          # read-only deploy key, see docs/security.md
 sudo ~/Test-Projekt/scripts/bootstrap.sh
 ```
@@ -108,8 +109,57 @@ The script is idempotent: run it again after any manual change on the host to
 make sure the baseline still holds; the self-test at the end must show only
 `PASS`. Details: [`scripts/README.md`](scripts/README.md).
 
-_TBD — first start, LDAP setup, certificate renewal, upgrade procedure,
-backup/restore, on-/offboarding, secrets rotation._
+### First start of the stacks
+
+In this order, each README has the exact steps: [`proxy/`](proxy/README.md)
+(certificates from `pki/`, Caddy) → [`services/lldap/`](services/lldap/README.md)
+(directory, groups, service accounts) → [`services/gitlab/`](services/gitlab/README.md)
+→ [`services/openproject/`](services/openproject/README.md) →
+[`services/xwiki/`](services/xwiki/README.md). LDAP wiring per product:
+[`docs/integration.md`](docs/integration.md).
+
+### Backup and restore
+
+`sudo ./scripts/backup.sh` writes one encrypted set to `/srv/backups/`; the
+timer installed by `bootstrap.sh` runs it nightly. Pull the sets to the
+workstation with `rsync` (the admin is in group `backup`). Reinstall = host
+preparation above → `bootstrap.sh` → copy a set and the age identity →
+`sudo ./scripts/restore.sh <set>.tar.age <identity>`. Procedure, guards and the
+measured restore test: [`docs/backup-restore.md`](docs/backup-restore.md).
+
+### Certificate renewal (yearly)
+
+`pki/README.md`, "Renewal runbook": issue new leaf certificates with
+`issue-cert.sh`, copy them to `/srv/proxy/certs`, restart Caddy; for XWiki
+rebuild `/srv/xwiki/cacerts` only if the **CA** changed (the leaf does not
+matter to the JVM). The certificates are part of every backup set.
+
+### Upgrades
+
+Take a backup, change the image tag in the stack's `compose.yaml`, `docker
+compose pull && docker compose up -d`, watch the healthcheck. GitLab: follow
+the upgrade path tool (ADR-0004) and never skip required stops; a set can only
+be restored onto the tag it was taken with (`restore.sh` enforces this).
+PostgreSQL major upgrades: dump-based restore (`docs/backup-restore.md`).
+
+### On- and offboarding
+
+Users exist only in lldap; membership in `git_user`, `wiki_user`, `pm_user`
+grants access per product. Steps: `services/lldap/README.md`,
+"On-/offboarding". Offboarding removes the account in lldap; sessions in the
+products expire on their own; GitLab CE additionally blocks a user whose
+LDAP entry no longer exists at that user's next sign-in attempt (the periodic
+LDAP sync is a Premium feature).
+
+### Secrets rotation
+
+Rotatable at any time: `GITLAB_LDAP_BIND_PASSWORD` and the bind passwords set
+in the OpenProject/XWiki admin UIs (change in lldap, then in the consumer),
+`LLDAP_JWT_SECRET` (invalidates UI sessions), the `ldap-ui.auth` gate hash,
+database passwords (change in `.env` and in the database, restart the stack).
+Never rotate: `LLDAP_KEY_SEED` (encrypts stored keys — a new seed breaks the
+directory) and `gitlab-secrets.json` (encrypts database columns). Both are
+therefore in every backup set, and the set itself is encrypted with `age`.
 
 ## Tooling and use of AI assistance
 

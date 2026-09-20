@@ -34,7 +34,7 @@ The files named in "Where" are what the script writes.
 | `cap_drop: [ALL]`, `security_opt: [no-new-privileges:true]`, `read_only` where possible | limit what a compromised process can do | every `compose.yaml` (exceptions documented) | done: proxy, lldap, both PostgreSQL and memcached with all three; openproject web/worker non-root with `no-new-privileges`; xwiki as root but with `cap_drop: ALL` (image needs root, needs no capability — ADR-0013); gitlab `no-new-privileges` only (Omnibus needs root and user switching, ADR-0010) |
 | Caddy: `user: 1000:1000`, `cap_drop: ALL` + `cap_add: NET_BIND_SERVICE` (the binary's file capability, see P-005), `read_only`, `no-new-privileges`, `admin off`, HTTP/3 off | the only Internet-facing process runs with one capability and a read-only filesystem | `proxy/compose.yaml`, `proxy/Caddyfile` | done |
 | non-root images where available (lldap) | no root inside the container at all | `services/lldap/compose.yaml` (`-rootless` image, `user: 1000:1000`, `cap_drop: ALL`, `read_only`) | done (lldap); Caddy runs non-root too |
-| resource limits (`mem_limit`) | one runaway container cannot starve the host | gitlab 8 GiB (ADR-0010), lldap 256 MB, openproject web 3 GiB / worker 1.5 GiB / db 1 GiB / cache 128 MB (ADR-0012), xwiki 2.5 GiB with a 1.5 GiB JVM heap / db 1 GiB (ADR-0013) | done |
+| resource limits (`mem_limit`) | one runaway container cannot starve the host | gitlab 8 GiB (ADR-0010), lldap 256 MB, openproject web 3 GiB / worker 1.5 GiB / db 1 GiB / cache 128 MB (ADR-0012), xwiki 3 GiB with a 1.5 GiB JVM heap / db 1 GiB (ADR-0013) | done |
 
 ## Transport
 | Measure | Why | Status |
@@ -65,9 +65,37 @@ encrypted off-host backups, CA key offline.
 | private identifiers (admin account, host names, key names) checked against a pattern list kept **outside** the repository | listing them in a tracked config would publish exactly what the check protects | `git config hooks.sanitizePatterns <file>`, read by the hook; skipped with a notice when unset | A.5.12 classification of information | done (workstation of the author; other admins set their own list) |
 
 ## Verification
-- `docker-bench-security` run and findings triaged (TBD, day 3).
-- `openssl s_client` / browser checks for every hostname (TBD).
-- Port scan from outside (`nmap`) showing only 22, 80, 443, 2222 (TBD).
+Measured from the workstation against the rebuilt host on 2026-09-20 (after
+the restore test, so the numbers describe the state a reinstall produces):
+
+- **Port scan from outside.** Three measurements, because one alone was not
+  trustworthy: (1) a full-range `nmap -sT -Pn -p- --open --reason` **through
+  the workstation's VPN exit node** (slow, therefore complete) showed
+  `22, 53, 80, 443, 2222`; (2) full-range scans over the residential uplink
+  were lossy in both directions (open ports missing, two random high ports
+  "open" once and `filtered` on every re-test — NAT connection tracking under
+  65 k connections); (3) targeted direct scans, repeated three times, show
+  `22/tcp` (host sshd, Debian banner), `80`, `443`, `2222/tcp` (GitLab's own
+  sshd, Ubuntu banner from the Omnibus image) `open` and `53` `filtered`. The
+  host itself (`ss -tlnH`) listens on exactly these four (IPv4 and IPv6);
+  Docker publishes only 2222 (GitLab) and 80/443 (Caddy). Conclusion: 53 was
+  an artefact of the exit node answering DNS, and nothing but the four
+  documented ports is reachable. Lesson: know the path of the scanner
+  (`ip route get <host>`) and cross-check outside view against inside view.
+- **TLS per hostname.** `openssl s_client -connect <host>:443 -servername
+  <name> -CAfile pki/ca.crt` for all four names: `CN=<name>`, SAN `DNS:<name>`,
+  issuer `CN=lab.test Root CA`, valid 2026-09-18 → 2027-09-18, TLSv1.3,
+  `TLS_AES_128_GCM_SHA256`, `Verify return code: 0`. Port 80 answers `308` to
+  `https://`. Response headers on a `200`: HSTS (`max-age=31536000`),
+  `X-Content-Type-Options: nosniff`, `Referrer-Policy`, no `Server` header;
+  GitLab sends an empty `Content-Security-Policy` (known gap 10).
+- **Sign-up closed everywhere** (`/users/sign_up`, XWiki `register`,
+  `/account/register` all redirect to the login); lldap UI answers `401`
+  without the gate credential.
+- **`docker-bench-security`: not run** within the time-box. It is the next
+  verification step; expected findings are the documented ones (GitLab and
+  XWiki as container root, no user namespace for the docker group — accepted in
+  ADR-0010/0013) and they should be triaged into accepted / fixed / gap here.
 
 ## Known gaps / extension steps (in order of value)
 Deliberately not built within the three-day time-box; each item names why it

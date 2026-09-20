@@ -8,7 +8,8 @@ set -euo pipefail
 # Turns a fresh host into the state described in docs/security.md "Host":
 # sshd hardening, unattended-upgrades incl. Docker origin, Docker CE from the
 # Docker repository (key fingerprint verified), apt pin, userns-remap with a
-# fixed subordinate range, read-only sudoers rule, /srv layout, Docker networks.
+# fixed subordinate range, read-only sudoers rule, /srv layout, Docker networks,
+# group backup for the admin, nightly backup timer.
 # Every step checks first and only acts when needed, so re-running is safe and
 # reports "skip" everywhere on a host that is already prepared.
 #
@@ -295,7 +296,62 @@ create_networks() {
 
 install_tools() {
     log "tools"
-    ensure_pkgs git rsync              # git: clone via deploy key; rsync: off-host backup copy
+    ensure_pkgs git rsync age          # git: clone via deploy key; rsync: off-host copy; age: backup encryption
+}
+
+delegate_backup_group() {
+    log "backup group"
+    # backup.sh writes every set as root:backup 0750/0640 (ADR-0008). Debian's
+    # system group "backup" (GID 34) exists for exactly this delegation; membership
+    # lets the admin pull sets off-host without root. Takes effect at the next login.
+    if id -nG "$ADMIN_USER" | grep -qw backup; then
+        skip "$ADMIN_USER in group backup"
+    else
+        usermod -aG backup "$ADMIN_USER"
+        log "added $ADMIN_USER to group backup (re-login required)"
+    fi
+}
+
+install_backup_timer() {
+    log "backup timer"
+    # The unit needs the absolute path of this checkout, which contains the admin's
+    # home; writing it here keeps that path out of the repository. A missed run
+    # (host down at 03:00) is made up after boot (Persistent); the random delay is
+    # the usual courtesy so that several hosts never start at the same second.
+    local repo changed=0
+    repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+    if write_if_changed /etc/systemd/system/backup.service 644 <<EOF
+[Unit]
+Description=Application-consistent backup of the lab.test stacks (scripts/backup.sh)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=$repo/scripts/backup.sh
+Nice=10
+EOF
+    then changed=1; fi
+    if write_if_changed /etc/systemd/system/backup.timer 644 <<'EOF'
+[Unit]
+Description=Nightly run of backup.service
+
+[Timer]
+OnCalendar=*-*-* 03:00:00 UTC
+RandomizedDelaySec=15min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+    then changed=1; fi
+    ((changed)) && systemctl daemon-reload
+    if systemctl is-enabled --quiet backup.timer && systemctl is-active --quiet backup.timer; then
+        skip "backup.timer enabled and active"
+    else
+        systemctl enable --now backup.timer
+        log "backup.timer enabled and started"
+    fi
 }
 
 self_test() {
@@ -310,6 +366,8 @@ self_test() {
     t "network edge, not internal" grep -qx 'edge false' <<<"$nets"
     t "network ldap, internal" grep -qx 'ldap true' <<<"$nets"
     t "$ADMIN_USER not in group docker" [ "$(id -nG "$ADMIN_USER" | tr ' ' '\n' | grep -cx docker)" = 0 ]
+    t "$ADMIN_USER in group backup" grep -qw backup <<<"$(id -nG "$ADMIN_USER")"
+    t "backup.timer active" systemctl is-active --quiet backup.timer
     sshd_cfg="$(sshd -T)"
     t "sshd: passwordauthentication no" grep -qx 'passwordauthentication no' <<<"$sshd_cfg"
     t "sshd: permitrootlogin no" grep -qx 'permitrootlogin no' <<<"$sshd_cfg"
@@ -332,4 +390,6 @@ configure_sudoers
 create_srv_layout
 create_networks
 install_tools
+delegate_backup_group
+install_backup_timer
 self_test

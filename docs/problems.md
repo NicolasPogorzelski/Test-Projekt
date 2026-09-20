@@ -210,3 +210,89 @@ Chronological. Format: symptom → verification → cause → fix / decision.
   document` on the first LDAP sign-in is the 9.x authenticator touching a
   cached document in a way XWiki 17 flags but tolerates. Lesson: "extension
   installed" is not "extension active" — the log said so before the UI did.
+
+## P-013 — `docker compose start` re-runs the OpenProject seeder on every backup
+- **Symptom:** the first `backup.sh` run showed `openproject-seeder Starting …
+  Exited` between stopping and starting `web`/`worker`; the OpenProject block
+  took 45 of the 92 s total, although dump and tar finish in about one second.
+- **Verification:** `backup.sh` log timestamps (08:19:31 → 08:20:16) and the
+  compose progress lines; `docker compose start --help` shows no `--no-deps`.
+- **Cause:** `web` and `worker` declare `depends_on: seeder` with
+  `condition: service_completed_successfully`. `compose start` honours
+  `depends_on` like `up` does, so the one-shot seeder container is started
+  again and the applications wait for it to exit.
+- **Fix:** accepted. The seeder is idempotent (that is how OpenProject's
+  official compose file uses it on every start), the cost is ~45 s of
+  application downtime per backup, and the alternative — `up -d --no-deps
+  web worker` — may recreate containers, which a backup script should not do.
+  Recorded here and in `docs/backup-restore.md`.
+
+## P-014 — `gitlab-backup` covers neither the SSH host keys nor `trusted-certs/`
+- **Symptom:** while writing `restore.sh`, the README's "Host prerequisites"
+  for GitLab listed two things the backup set did not contain:
+  `/srv/gitlab/config/ssh_host_*` and `/srv/gitlab/config/trusted-certs/ca.crt`.
+- **Verification:** `ls /srv/gitlab/config/` on the reference host shows the
+  host keys next to `gitlab-secrets.json`; GitLab's backup documentation
+  ("Storing configuration files") names only `gitlab.rb` and
+  `gitlab-secrets.json` as the files to keep separately, and the first set
+  written by `backup.sh` contained exactly those.
+- **Cause:** Omnibus keeps the sshd host keys in `/etc/gitlab` (the config
+  volume), outside everything `gitlab-backup create` archives. A rebuilt host
+  would generate new keys and every clone over `:2222` would fail with
+  "REMOTE HOST IDENTIFICATION HAS CHANGED". `trusted-certs/ca.crt` is a copy of
+  the repository's `pki/ca.crt`, placed by hand at first start (P-010).
+- **Fix:** `backup.sh` adds `gitlab/ssh-host-keys.tar.gz` (numeric owners,
+  inside the encrypted set); `restore.sh` unpacks it into
+  `/srv/gitlab/config/` before the first start and installs `pki/ca.crt` into
+  `trusted-certs/` from the checkout. Lesson: the application's backup tool
+  defines what *it* considers state; the reinstall checklist defines what the
+  *service* needs — the difference is the backup gap.
+
+## P-015 — The Debian 13 cloud image has no `git`, but the reinstall path starts with `git clone`
+- **Symptom:** on the rebuilt host, the runbook step `git clone … ~/Test-Projekt`
+  failed with `bash: git: command not found`.
+- **Verification:** the Hetzner Debian 13 image ships without `git`;
+  `bootstrap.sh` is the step that installs it (`ensure_pkgs git rsync age`) —
+  but `bootstrap.sh` lives in the repository that has to be cloned first.
+- **Cause:** chicken-and-egg in the runbook order (clone → bootstrap), noticed
+  once on day 1 and never written down, so it repeated on day 3 (the reason
+  this file exists).
+- **Fix:** the runbook installs `git` before the clone
+  (`sudo apt-get update && sudo apt-get install -y git`); `bootstrap.sh` keeps
+  it in `ensure_pkgs` and reports `skip`. Once the repository is public, the
+  alternative is to fetch `bootstrap.sh` alone with `curl` and clone afterwards.
+  The extra minute is included in the measured RTO.
+
+## P-016 — `restore.sh` exited silently in its own verification step
+- **Symptom:** the first restore run completed every stack, GitLab's
+  `gitlab:check` printed its report, then the log ended after
+  `==> verify: containers` with no table, no `done` line and exit code 1; the
+  decrypted plaintext set was left in `/srv/backups/<stamp>/`.
+- **Verification:** `docker ps` on the host showed all nine containers up and
+  every healthcheck green; `curl --cacert pki/ca.crt --resolve` from the
+  workstation returned 302/302/302/401 with `ssl_verify_result 0`. The
+  system was fine; the script was not.
+- **Cause:** two mistakes in one function. `verify()` listed `caddy` among the
+  containers that must report `healthy`, but Caddy has no healthcheck, so
+  `.State.Health.Status` never matches. And `wait_for` ended in `die`, i.e.
+  `exit 1` — an `exit` inside a function is not caught by `|| { … }` — while
+  the call site had `2>/dev/null`, which swallowed the message.
+- **Fix:** `wait_for` returns 1 instead of exiting; restore steps append
+  `|| die`, `verify()` counts and prints every result; Caddy, worker and cache
+  are checked for `running`. Added `restore.sh --verify` to rerun only the
+  check on a restored host. Lesson: never silence stderr around a helper that
+  can exit, and test the "all green" path of a verifier against a container
+  without a healthcheck.
+
+## P-017 — Small day-1 slips, bundled
+Recorded late (from the day-1 notes) because they were "too small" at the time;
+P-015 shows what that habit costs.
+- `pki/make-ca.sh` had a syntax error on first run (line 22) — caught by
+  `bash -n` afterwards; since then every script is linted before it is run.
+- `chmod =x` instead of `chmod +x` on a script — `=x` *replaces* the mode with
+  execute-only, so the file became unreadable for its owner; fixed with
+  `chmod 755`.
+- A typo in the sshd drop-in heredoc — noticed by `sshd -t` before the reload,
+  which is exactly why `bootstrap.sh` runs `sshd -t` and removes the file on
+  failure instead of reloading blindly.
+- `git` missing on the cloud image — see P-015 for the day it repeated.
