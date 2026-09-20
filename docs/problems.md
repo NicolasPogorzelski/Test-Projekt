@@ -395,3 +395,22 @@ P-015 shows what that habit costs.
   projects with the module, `default_projects_public = 0`. Lesson: "disabled"
   claims about per-project settings need a query over all projects, not a
   look at one.
+
+## P-023 — The lldap gate's 401 carries none of the proxy's security headers
+- **Symptom:** while verifying the new `X-Frame-Options` default, the `401`
+  from `https://ldap.lab.test/` (basic-auth gate) showed only
+  `server: Caddy`, `www-authenticate` and `content-length` — no HSTS, no
+  `X-Frame-Options`, and the `Server` banner that `-Server` should remove.
+- **Verification:** `curl -sk -D - https://ldap.lab.test/` from the
+  workstation; all other hosts carry the header set on 200 and 302. With
+  valid gate credentials (`curl -u <gate user> -D - https://ldap.lab.test/`)
+  the lldap page answers `200` **with** HSTS and `X-Frame-Options` and
+  without a `Server` header — so only the error response is affected.
+- **Cause:** `basic_auth` rejects with a Caddy error, and errors are written
+  by Caddy's error handling route, which does not run the site's `header`
+  directive.
+- **Fix:** not applied on hand-in day — candidate is a `handle_errors` block
+  in the `ldap.lab.test` site importing the same headers; it needs a test
+  that the `WWW-Authenticate` challenge survives. Recorded as known gap 10a.
+  Lesson: a header policy must be measured on error responses too, not only
+  on the happy path.

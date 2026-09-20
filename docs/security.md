@@ -44,7 +44,8 @@ The files named in "Where" are what the script writes.
 | TLS everywhere at the edge, private CA, per-service certificates | task item 5; confidentiality and authenticity | done |
 | certificate verification never disabled in any client | otherwise TLS between services is worthless | done |
 | LDAPS (planned) | bind passwords not in clear text | planned |
-| HSTS at the proxy | prevent downgrade after first visit | done |
+| HSTS at the proxy | prevent downgrade after first visit | done (not on Caddy's own error responses, P-023) |
+| `X-Frame-Options: SAMEORIGIN` as a proxy default for backends that send none (XWiki, lldap UI); GitLab and OpenProject keep their own | clickjacking | done (day 3, measured from outside: XWiki sent no frame protection before) |
 
 ## Applications
 | Measure | Where | Status |
@@ -162,6 +163,13 @@ matters, why it was deferred, and where the decision is recorded.
    so that all stacks use one mechanism today. — ADR-0009, ADR-0011.
 9. **LDAPS between containers**: traffic is plain text on an internal Docker
    network; LDAPS would add certificate handling in every client. — ADR-0006.
+10a. **Headers on Caddy's own error responses**: the `401` of the lldap
+    basic-auth gate is written by Caddy's error route and carries none of
+    the `hardened` headers (no HSTS, no `X-Frame-Options`, `Server: Caddy`
+    visible). Impact is small (empty body), but "no Server header" and
+    "HSTS everywhere" are not true for that one response. Fix candidate: a
+    `handle_errors` block importing the same header set — needs a test that
+    `WWW-Authenticate` survives it. — P-023.
 10. **Content-Security-Policy in GitLab** (off by default, sent as an empty
     header); application setting, needs testing against the UI. — P-007.
     **XWiki session IDs in URLs** (`;jsessionid=` on redirects, URL
