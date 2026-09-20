@@ -35,31 +35,34 @@ recorded with root cause and fix ([problems](docs/problems.md)).
 
 ```mermaid
 flowchart LR
-  B([Browser / git client]) -->|HTTPS :443, SSH :2222| C
-  subgraph host["one Debian 13 host — Docker, userns-remap"]
-    C["Caddy<br/>TLS with private CA<br/>security headers"]
+  B([Browser]) -->|"HTTPS :443 (:80 redirects)"| C
+  D([git client]) -->|"SSH :2222, published by GitLab"| G
+  subgraph host["one Debian 13 host — Docker with userns-remap"]
+    C["Caddy<br/>TLS with private CA<br/>security-header baseline"]
     G["GitLab CE"]
     W["XWiki"]
     P["OpenProject"]
     L["lldap<br/>directory"]
-    C -->|git.lab.test| G
-    C -->|wiki.lab.test| W
-    C -->|pm.lab.test| P
-    C -->|ldap.lab.test + basic-auth gate| L
-    G -.->|LDAP| L
-    W -.->|LDAP| L
-    P -.->|LDAP| L
-    G ==>|webhook: MR, pipeline, comment| P
-    G -.->|external wiki| W
-    P -.->|Documentation attribute| W
+    S[("/srv/backups<br/>age-encrypted sets<br/>nightly timer")]
+    C -->|"git.lab.test"| G
+    C -->|"wiki.lab.test"| W
+    C -->|"pm.lab.test"| P
+    C -->|"ldap.lab.test<br/>basic-auth gate"| L
+    G -.->|"LDAP"| L
+    W -.->|"LDAP"| L
+    P -.->|"LDAP"| L
+    G ==>|"webhook: MR, pipeline, comment"| P
+    G -.->|"External wiki (link)"| W
+    P -.->|"Documentation attribute (link)"| W
+    G & W & P & L -->|"backup.sh"| S
   end
-  S[("/srv/backups<br/>age-encrypted sets<br/>nightly timer")] -->|rsync pull| WS([workstation])
-  host -->|backup.sh| S
+  S -->|"rsync pull over SSH"| WS([workstation])
 ```
 
-Solid arrows: user traffic through the proxy. Dotted: shared identity and the
-documentation links. Double: the GitLab → OpenProject webhook. Details:
-[`docs/architecture.md`](docs/architecture.md), [`docs/integration.md`](docs/integration.md).
+Solid arrows: requests and data. Dotted: shared identity (LDAP) and the
+documentation links opened in the user's browser. Double: the GitLab →
+OpenProject webhook. Details: [`docs/architecture.md`](docs/architecture.md),
+[`docs/integration.md`](docs/integration.md).
 
 ## Contents
 
