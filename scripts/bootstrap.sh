@@ -298,6 +298,19 @@ install_tools() {
     ensure_pkgs git rsync              # git: clone via deploy key; rsync: off-host backup copy
 }
 
+delegate_backup_group() {
+    log "backup group"
+    # backup.sh writes every set as root:backup 0750/0640 (ADR-0008). Debian's
+    # system group "backup" (GID 34) exists for exactly this delegation; membership
+    # lets the admin pull sets off-host without root. Takes effect at the next login.
+    if id -nG "$ADMIN_USER" | grep -qw backup; then
+        skip "$ADMIN_USER in group backup"
+    else
+        usermod -aG backup "$ADMIN_USER"
+        log "added $ADMIN_USER to group backup (re-login required)"
+    fi
+}
+
 self_test() {
     log "self-test"
     local info nets sshd_cfg
@@ -310,6 +323,7 @@ self_test() {
     t "network edge, not internal" grep -qx 'edge false' <<<"$nets"
     t "network ldap, internal" grep -qx 'ldap true' <<<"$nets"
     t "$ADMIN_USER not in group docker" [ "$(id -nG "$ADMIN_USER" | tr ' ' '\n' | grep -cx docker)" = 0 ]
+    t "$ADMIN_USER in group backup" grep -qw backup <<<"$(id -nG "$ADMIN_USER")"
     sshd_cfg="$(sshd -T)"
     t "sshd: passwordauthentication no" grep -qx 'passwordauthentication no' <<<"$sshd_cfg"
     t "sshd: permitrootlogin no" grep -qx 'permitrootlogin no' <<<"$sshd_cfg"
@@ -332,4 +346,5 @@ configure_sudoers
 create_srv_layout
 create_networks
 install_tools
+delegate_backup_group
 self_test
