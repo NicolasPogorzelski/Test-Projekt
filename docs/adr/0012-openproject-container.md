@@ -4,7 +4,7 @@
 Accepted
 
 ## Context
-ADR-0003 chose OpenProject Community Edition. OpenProject publishes two
+[ADR-0003](0003-project-management-tool.md) chose OpenProject Community Edition. OpenProject publishes two
 container flavours (https://www.openproject.org/docs/installation-and-operations/installation/docker/):
 `X.Y.Z-slim` (application only, one container per role, "recommended for
 production") and `X.Y.Z` all-in-one (supervisord starts Puma, worker, cron,
@@ -21,10 +21,10 @@ recommended for production"). OpenProject 16 requires PostgreSQL ≥ 16.
   system built as an assessment for a company follows the production path.
   (a) also fits the existing pattern: every process non-root, per-role
   memory limits, the database on our pinned PostgreSQL 17 with the `pg_dump`
-  backup path (ADR-0008), background jobs visible as their own container
+  backup path ([ADR-0008](0008-backup-and-reinstall.md)), background jobs visible as their own container
   (they carry the GitLab webhook processing, ADR integration item 2).
 - Not taken from the vendor's compose file: `autoheal` (needs the Docker
-  socket — the reason Traefik was rejected in ADR-0005) and the
+  socket — the reason Traefik was rejected in [ADR-0005](0005-reverse-proxy.md)) and the
   `openproject/proxy` Apache container (Caddy talks to Puma directly; Puma
   serves assets itself in production mode). Caddy's upstream is
   `openproject:8080`.
@@ -59,12 +59,12 @@ recommended for production"). OpenProject 16 requires PostgreSQL ≥ 16.
   would break the URL. `SECRET_KEY_BASE` signs sessions and tokens and is
   part of every backup.
 - `SSL_CERT_FILE` points at the private CA (mounted read-only — nothing
-  chowns it, unlike GitLab's `trusted-certs`, P-010). This replaces the
+  chowns it, unlike GitLab's `trusted-certs`, [P-010](../problems.md#p-010--gitlab-reconfigure-fails-on-a-bind-mounted-ca-certificate)). This replaces the
   system bundle for OpenProject's outbound TLS: fine for calls to
   `git.lab.test`/`wiki.lab.test`; outbound calls to public sites would
   fail — none are needed.
 - `OPENPROJECT_HTTPS=true` (secure cookies, https links) with
-  `OPENPROJECT_HSTS=false`: HSTS is Caddy's job (ADR-0005).
+  `OPENPROJECT_HSTS=false`: HSTS is Caddy's job ([ADR-0005](0005-reverse-proxy.md)).
 - The seeder runs on every `up` (migrations on upgrades) and must finish
   before web/worker start (`service_completed_successfully`).
 - **Measured 2026-09-19 (idle, after first start):** web 1.56 GiB, worker

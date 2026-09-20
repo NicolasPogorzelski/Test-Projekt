@@ -17,7 +17,7 @@ single Debian 13 host:
 
 All services are served over HTTPS with certificates issued by a private CA, share
 one LDAP directory for user accounts, and can be backed up and reinstalled with the
-scripts in `scripts/`.
+scripts in [`scripts/`](scripts).
 
 This repository was built as a practical assessment task in three days. Every
 design decision is recorded as an Architecture Decision Record in
@@ -57,8 +57,8 @@ flowchart LR
 ```
 
 Dotted: the applications query the one directory on every sign-in — they are
-LDAP clients, nothing is pushed into them (`docs/architecture.md`,
-`docs/integration.md` §1).
+LDAP clients, nothing is pushed into them ([`docs/architecture.md`](docs/architecture.md),
+[`docs/integration.md`](docs/integration.md) §1).
 
 <details>
 <summary><strong>Integrations</strong> — how the products are tied together (<code>docs/integration.md</code>)</summary>
@@ -120,8 +120,10 @@ docs/            architecture, security, integration, backup/restore, problems, 
 pki/             scripts to create the private CA and issue service certificates; ca.crt
 proxy/           Caddy compose stack and Caddyfile
 services/        one compose stack per service: gitlab, xwiki, openproject, lldap
-scripts/         bootstrap.sh (host preparation), backup.sh, restore.sh
+scripts/         bootstrap.sh (host preparation), backup.sh, restore.sh, git pre-commit hook
+.github/         CI: shellcheck, yamllint, compose validation, gitleaks over the history
 .env.example     all environment variables with placeholders
+LICENSE          MIT
 ```
 
 ## Quick start
@@ -130,19 +132,19 @@ scripts/         bootstrap.sh (host preparation), backup.sh, restore.sh
 > workstation with `openssl`, `ssh` and `git`.
 
 1. **Workstation:** clone this repository, create the CA and the service
-   certificates (`pki/make-ca.sh`, `pki/issue-cert.sh` — see
+   certificates ([`pki/make-ca.sh`](pki/make-ca.sh), [`pki/issue-cert.sh`](pki/issue-cert.sh) — see
    [`pki/README.md`](pki/README.md)), add the `*.lab.test` names to
-   `/etc/hosts`, import `pki/ca.crt` into your browser and verify its
+   `/etc/hosts`, import [`pki/ca.crt`](pki/ca.crt) into your browser and verify its
    fingerprint:
    `SHA256 A7:08:31:80:94:29:B9:64:81:47:C3:83:9F:D3:55:04:AE:37:06:FD:81:9A:0D:AB:A7:9B:3E:3D:38:97:49:B0`
 2. **Host:** create the admin user (see "Host preparation" below), clone this
    repository and run `sudo ./scripts/bootstrap.sh` from that account (sshd
    hardening, Docker CE with `userns-remap`, apt pin, sudoers rule, `/srv`,
    Docker networks — see [`scripts/README.md`](scripts/README.md)).
-3. Copy `.env.example` to `.env` in each stack directory and fill in secrets.
+3. Copy [`.env.example`](.env.example) to `.env` in each stack directory and fill in secrets.
 4. Copy the service certificates to `/srv/proxy/certs/`.
 5. Start the stacks in this order: `proxy`, `lldap`, `gitlab`, `openproject`, `xwiki`.
-6. Configure LDAP in each service and the integrations (`docs/integration.md`).
+6. Configure LDAP in each service and the integrations ([`docs/integration.md`](docs/integration.md)).
 
 ## Evaluating this repository
 
@@ -175,17 +177,17 @@ Three ways, from cheapest to most complete:
 
 - [Architecture](docs/architecture.md) — components, networks, data flows, threat model
 - [Security](docs/security.md) — measures, rationale, ISO 27001 mapping
-- [Integration](docs/integration.md) — LDAP, GitLab ↔ OpenProject, XWiki ↔ OpenProject
-- [Backup & restore](docs/backup-restore.md) — concept and restore test protocol
-- [Problems & peculiarities](docs/problems.md)
-- [Architecture Decision Records](docs/adr/)
+- [Integration](docs/integration.md) — shared identity (LDAP), GitLab → OpenProject webhook, XWiki as the documentation hub, what is not built and why
+- [Backup & restore](docs/backup-restore.md) — what is in a set, procedures, the measured restore test
+- [Problems & peculiarities](docs/problems.md) — 23 entries, each symptom → verification → cause → fix
+- [Architecture Decision Records](docs/adr/) — 14 decisions with alternatives; [index](docs/adr/README.md)
 
 ## Runbook
 
 ### Workstation setup
 
 Once per clone, so that every commit is scanned before it exists
-(`docs/security.md`, "Secrets and data"):
+([`docs/security.md`](docs/security.md), "Secrets and data"):
 
 ```
 brew install gitleaks shellcheck            # or the distribution packages
@@ -208,7 +210,7 @@ provider firewall that allows inbound TCP 22, 80, 443 and 2222 only.
 
 **First login as root** (once, via the provider's root key). Create the admin
 account and hand it the SSH key; everything else is done by `bootstrap.sh`.
-Use a lower-case username (`docs/problems.md` P-003).
+Use a lower-case username ([`docs/problems.md`](docs/problems.md) [P-003](docs/problems.md#p-003--deluser---remove-home-fails-on-the-minimal-debian-image)).
 
 ```
 adduser --gecos "" <admin>                 # asks for a password: this is the sudo password
@@ -234,7 +236,7 @@ make sure the baseline still holds; the self-test at the end must show only
 ### First start of the stacks
 
 In this order, each README has the exact steps: [`proxy/`](proxy/README.md)
-(certificates from `pki/`, Caddy) → [`services/lldap/`](services/lldap/README.md)
+(certificates from [`pki/`](pki), Caddy) → [`services/lldap/`](services/lldap/README.md)
 (directory, groups, service accounts) → [`services/gitlab/`](services/gitlab/README.md)
 → [`services/openproject/`](services/openproject/README.md) →
 [`services/xwiki/`](services/xwiki/README.md). LDAP wiring per product:
@@ -251,7 +253,7 @@ measured restore test: [`docs/backup-restore.md`](docs/backup-restore.md).
 
 ### Certificate renewal (yearly)
 
-`pki/README.md`, "Renewal runbook": issue new leaf certificates with
+[`pki/README.md`](pki/README.md), "Renewal runbook": issue new leaf certificates with
 `issue-cert.sh`, copy them to `/srv/proxy/certs`, restart Caddy; for XWiki
 rebuild `/srv/xwiki/cacerts` only if the **CA** changed (the leaf does not
 matter to the JVM). The certificates are part of every backup set.
@@ -260,9 +262,9 @@ matter to the JVM). The certificates are part of every backup set.
 
 Take a backup, change the image tag in the stack's `compose.yaml`, `docker
 compose pull && docker compose up -d`, watch the healthcheck. GitLab: follow
-the upgrade path tool (ADR-0004) and never skip required stops; a set can only
+the upgrade path tool ([ADR-0004](docs/adr/0004-git-server.md)) and never skip required stops; a set can only
 be restored onto the tag it was taken with (`restore.sh` enforces this).
-PostgreSQL major upgrades: dump-based restore (`docs/backup-restore.md`).
+PostgreSQL major upgrades: dump-based restore ([`docs/backup-restore.md`](docs/backup-restore.md)).
 
 ### Project onboarding
 
@@ -274,12 +276,12 @@ and disable the built-in wiki under *Settings → General → Visibility*; creat
 the OpenProject project — it inherits the module defaults (GitLab on, Wiki
 off), set the `Documentation` attribute on the overview to the XWiki page,
 add the `gitlab-integration` user as member with role `GitLab Integration`
-and register the webhook in the GitLab project (`docs/integration.md` §2, §3).
+and register the webhook in the GitLab project ([`docs/integration.md`](docs/integration.md) §2, §3).
 
 ### On- and offboarding
 
 Users exist only in lldap; membership in `git_user`, `wiki_user`, `pm_user`
-grants access per product. Steps: `services/lldap/README.md`,
+grants access per product. Steps: [`services/lldap/README.md`](services/lldap/README.md),
 "On-/offboarding". Offboarding removes the account in lldap; sessions in the
 products expire on their own; GitLab CE additionally blocks a user whose
 LDAP entry no longer exists at that user's next sign-in attempt (the periodic

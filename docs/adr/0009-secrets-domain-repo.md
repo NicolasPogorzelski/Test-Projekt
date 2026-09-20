@@ -5,11 +5,11 @@ Accepted
 
 ## Secrets
 - Each stack reads a `.env` file (`chmod 600`) that is excluded from git;
-  `.env.example` documents every variable with a placeholder.
+  [`.env.example`](../../.env.example) documents every variable with a placeholder.
 - Secrets are generated (`openssl rand -base64 32`), never invented.
-- `.gitignore` excludes `.env`, private keys, certificates except `pki/ca.crt`,
+- [`.gitignore`](../../.gitignore) excludes `.env`, private keys, certificates except [`pki/ca.crt`](../../pki/ca.crt),
   backups and dumps. `gitleaks` runs as a pre-commit hook to catch patterns
-  that `.gitignore` cannot know about.
+  that [`.gitignore`](../../.gitignore) cannot know about.
 - Rotation is documented in the runbook.
 - Docker Compose `secrets:` would avoid secrets in `docker inspect`, but only
   images with `_FILE` variants support it; kept as a next step.
@@ -34,5 +34,5 @@ Accepted
   Publishing is the moment secrets hygiene must be final: anything ever
   public counts as leaked.
 - English only; small, chronological commits as evidence of the process.
-- One ADR per non-obvious decision; problems recorded in `docs/problems.md`.
+- One ADR per non-obvious decision; problems recorded in [`docs/problems.md`](../problems.md).
 - Transparent statement on the use of AI assistance in the README.

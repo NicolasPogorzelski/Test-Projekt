@@ -37,7 +37,7 @@ as a non-root process inside the container.
   misconfiguration in a time-boxed build; another admin can review the whole
   file.
 - **Secure defaults, documented.** Caddy's implicit behaviour is listed in
-  `docs/architecture.md` ("What Caddy does implicitly") with references to
+  [`docs/architecture.md`](../architecture.md) ("What Caddy does implicitly") with references to
   the Caddy documentation, so nothing security-relevant is hidden.
 - **nginx is an equivalent alternative.** It was not chosen only because of
   the additional configuration effort within the three-day time box.
@@ -47,7 +47,7 @@ as a non-root process inside the container.
 - Caddy's automatic ACME/Let's Encrypt is unused: `.test` hostnames are not
   publicly resolvable and the task requires private-CA certificates.
 - Caddy's built-in local CA (`tls internal`) is deliberately not used so that
-  the PKI remains fully explainable (ADR-0007).
+  the PKI remains fully explainable ([ADR-0007](0007-pki.md)).
 - The header contract with each backend must still be configured on the
   backend side: GitLab `nginx['listen_https'] = false` and `listen_port = 80`
   (https://docs.gitlab.com/omnibus/settings/ssl/), OpenProject
@@ -61,4 +61,4 @@ as a non-root process inside the container.
   `caddy reload`. Accepted: less surface, and changes are rare.
 - The official image carries the file capability `cap_net_bind_service=ep` on
   the binary; with `cap_drop: ALL` the container must `cap_add:
-  NET_BIND_SERVICE` or the process cannot even be executed (P-005).
+  NET_BIND_SERVICE` or the process cannot even be executed ([P-005](../problems.md#p-005--caddy-exits-with-exec-usrbincaddy-operation-not-permitted)).

@@ -32,7 +32,7 @@ Hetzner Cloud Firewall in front of the host.
 - Reinstallation can only be *proven* on a disposable host.
 - A public IP turns the security requirement into a real one: SSH key-only
   access, no exposed backend ports, firewall — all of it demonstrable.
-- 16 GB is the GitLab single-node baseline (see ADR-0004); OpenProject, XWiki
+- 16 GB is the GitLab single-node baseline (see [ADR-0004](0004-git-server.md)); OpenProject, XWiki
   (JVM), lldap, Caddy and three PostgreSQL instances fit alongside.
 - Costs for the three-day build are around ten euros (CPX42 at about 0.13 EUR/h,
   hourly billing); the server is deleted after the final backup.

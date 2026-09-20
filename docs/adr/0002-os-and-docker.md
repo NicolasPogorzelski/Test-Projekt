@@ -62,7 +62,7 @@ Debian 13, Docker CE from the Docker repository, rootful daemon with
 - `/tmp` is a tmpfs on Debian 13: scripts must not stage large files there.
 - Bind-mounted directories must be owned by the *remapped* UID
   (subuid start + container UID); this is expected to cause permission
-  issues and is documented in `docs/problems.md`.
+  issues and is documented in [`docs/problems.md`](../problems.md).
 - Images requiring `--privileged` or `--network=host` cannot run; none are
   needed.
 - Fallback: if `userns-remap` costs more than one hour on day 1, it is

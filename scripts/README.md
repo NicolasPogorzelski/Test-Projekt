@@ -3,7 +3,7 @@
 | Script | Runs on | Purpose |
 |---|---|---|
 | `bootstrap.sh` | host, as root via `sudo` | host baseline: sshd, unattended-upgrades, Docker CE, userns-remap, sudoers, `/srv`, networks |
-| `backup.sh` | host, as root via `sudo` | one application-consistent, `age`-encrypted backup set of all stacks under `/srv/backups/`; keeps 7 (`docs/backup-restore.md`) |
+| `backup.sh` | host, as root via `sudo` | one application-consistent, `age`-encrypted backup set of all stacks under `/srv/backups/`; keeps 7 ([`docs/backup-restore.md`](../docs/backup-restore.md)) |
 | `restore.sh` | host, as root via `sudo` | restores one set onto a freshly bootstrapped host, with checksum, version and empty-target guards, ends with a TLS/health check |
 | `backup-recipients.txt` | — | `age` public key(s) `backup.sh` encrypts for; the private identity is never on the host |
 | `git-hooks/pre-commit` | workstation | gitleaks on the staged changes + private-identifier check; activate with `git config core.hooksPath scripts/git-hooks` (README, "Workstation setup") |
@@ -12,7 +12,7 @@
 
 Turns a fresh Debian 13 host into the state described in
 [`docs/security.md`](../docs/security.md) ("Host" table). It is the first step
-of a reinstall (`clone → bootstrap.sh → restore.sh`, ADR-0008).
+of a reinstall (`clone → bootstrap.sh → restore.sh`, [ADR-0008](../docs/adr/0008-backup-and-reinstall.md)).
 
 ```
 sudo ./scripts/bootstrap.sh
@@ -52,10 +52,10 @@ script takes the calling user from `SUDO_USER` and writes it into
 10. `git`, `rsync` and `age`.
 11. Adds the admin to Debian's `backup` group (read access to the encrypted
     sets without root) and installs `backup.service` + `backup.timer`
-    (nightly `backup.sh`, `docs/backup-restore.md`).
+    (nightly `backup.sh`, [`docs/backup-restore.md`](../docs/backup-restore.md)).
 12. Self-test: prints one `PASS`/`FAIL` line per measure and exits non-zero on
     any failure. The output is the evidence for the status column in
-    `docs/security.md`.
+    [`docs/security.md`](../docs/security.md).
 
 ### Idempotency
 
@@ -73,7 +73,7 @@ readable in one sitting. Ansible earns its keep with several hosts or
 several distributions; the migration path is straightforward — each step
 here is one role (`ssh_hardening`, `docker_userns`, `srv_layout`,
 `backup_timer`), `backup.sh` and `restore.sh` stay as they are and get
-deployed by a role. `docs/architecture.md`, "Host requirements", is the
+deployed by a role. [`docs/architecture.md`](../docs/architecture.md), "Host requirements", is the
 specification either tool implements.
 
 ### What it does not do

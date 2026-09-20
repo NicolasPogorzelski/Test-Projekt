@@ -64,7 +64,7 @@ service still shows its own login form.
   travel unencrypted only within the internal network, no host port is
   published.
 - LDAPS requires the CA in three client trust stores (Ruby/GitLab,
-  Ruby/OpenProject, JVM/XWiki) — the same mechanism as for HTTPS (ADR-0007).
+  Ruby/OpenProject, JVM/XWiki) — the same mechanism as for HTTPS ([ADR-0007](0007-pki.md)).
 - Note: lldap's GitLab example uses port 389; lldap listens on 3890.
 
 ## Trust model assessment (added 2026-09-20)

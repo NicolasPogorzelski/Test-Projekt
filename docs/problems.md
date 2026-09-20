@@ -2,6 +2,32 @@
 
 Chronological. Format: symptom → verification → cause → fix / decision.
 
+## Index
+
+- [P-001](#p-001--flatpak-browsers-do-not-use-the-system-ca-trust-store) — Flatpak browsers do not use the system CA trust store
+- [P-002](#p-002--ssh-host-key-fingerprint-not-visible-before-the-first-connection) — SSH host key fingerprint not visible before the first connection
+- [P-003](#p-003--deluser---remove-home-fails-on-the-minimal-debian-image) — `deluser --remove-home` fails on the minimal Debian image
+- [P-004](#p-004--shared-proxy-network-must-not-be---internal) — Shared proxy network must not be `--internal`
+- [P-005](#p-005--caddy-exits-with-exec-usrbincaddy-operation-not-permitted) — Caddy exits with `exec /usr/bin/caddy: operation not permitted`
+- [P-006](#p-006--http3-still-listed-on-the-port-80-redirect-listener-accepted) — HTTP/3 still listed on the port-80 redirect listener (accepted)
+- [P-007](#p-007--security-headers-absent-on-502-responses-closed-2026-09-19) — Security headers absent on 502 responses (closed 2026-09-19)
+- [P-008](#p-008--dockremap-received-the-same-subordinate-range-as-the-admin-user) — `dockremap` received the same subordinate range as the admin user
+- [P-009](#p-009--first-image-pulled-before-userns-remap-was-active) — First image pulled before `userns-remap` was active
+- [P-010](#p-010--gitlab-reconfigure-fails-on-a-bind-mounted-ca-certificate) — GitLab `reconfigure` fails on a bind-mounted CA certificate
+- [P-011](#p-011--gitlab-resolves-its-own-external-hostname-to-itself-not-to-the-proxy) — GitLab resolves its own external hostname to itself, not to the proxy
+- [P-012](#p-012--xwiki-ldap-installed-configured-and-still-invalid-credentials) — XWiki LDAP: installed, configured, and still "Invalid credentials"
+- [P-013](#p-013--docker-compose-start-re-runs-the-openproject-seeder-on-every-backup) — `docker compose start` re-runs the OpenProject seeder on every backup
+- [P-014](#p-014--gitlab-backup-covers-neither-the-ssh-host-keys-nor-trusted-certs) — `gitlab-backup` covers neither the SSH host keys nor `trusted-certs/`
+- [P-015](#p-015--the-debian-13-cloud-image-has-no-git-but-the-reinstall-path-starts-with-git-clone) — The Debian 13 cloud image has no `git`, but the reinstall path starts with `git clone`
+- [P-016](#p-016--restoresh-exited-silently-in-its-own-verification-step) — `restore.sh` exited silently in its own verification step
+- [P-017](#p-017--small-day-1-slips-bundled) — Small day-1 slips, bundled
+- [P-018](#p-018--webhook-answered-200-on-every-delivery-and-linked-nothing) — Webhook answered 200 on every delivery and linked nothing
+- [P-019](#p-019--docker-bench-under-sh-reports-false-warns) — docker-bench under `sh` reports false WARNs
+- [P-020](#p-020--a-stale-initial_root_password-reappears-after-a-restore) — A stale `initial_root_password` reappears after a restore
+- [P-021](#p-021--gitlab-refuses-the-external-wiki-url-requests-to-the-local-network-are-not-allowed) — GitLab refuses the External wiki URL: "Requests to the local network are not allowed"
+- [P-022](#p-022--the-second-seeded-openproject-project-kept-the-wiki-module) — The second seeded OpenProject project kept the wiki module
+- [P-023](#p-023--the-lldap-gates-401-carries-none-of-the-proxys-security-headers) — The lldap gate's 401 carries none of the proxy's security headers
+
 ## P-001 — Flatpak browsers do not use the system CA trust store
 - **Symptom:** (anticipated) after `update-ca-trust` on the Fedora-based
   workstation, Firefox/Chrome still show a certificate warning for
@@ -9,7 +35,7 @@ Chronological. Format: symptom → verification → cause → fix / decision.
 - **Verification:** `flatpak list --app` shows Firefox and Chrome installed as
   Flatpaks; Flatpak sandboxes ship their own trust store.
 - **Cause:** Flatpak applications do not read `/etc/pki/ca-trust`.
-- **Fix:** import `pki/ca.crt` in the browser's own certificate manager
+- **Fix:** import [`pki/ca.crt`](../pki/ca.crt) in the browser's own certificate manager
   (Firefox: Settings → Privacy & Security → Certificates → Authorities →
   Import). Documented in the README for other admins.
 
@@ -118,14 +144,14 @@ Chronological. Format: symptom → verification → cause → fix / decision.
   **reproducibility**: on a rebuild `dockerd` could pick a different start
   (e.g. if root ever gets a range), and every documented host UID such as
   `101000` for Caddy would be wrong.
-- **Fix:** `scripts/bootstrap.sh` creates `dockremap` itself and pins
+- **Fix:** [`scripts/bootstrap.sh`](../scripts/bootstrap.sh) creates `dockremap` itself and pins
   `dockremap:100000:65536` in `/etc/subuid` and `/etc/subgid`; `daemon.json`
   names the user explicitly (`"userns-remap": "dockremap"`) instead of
   `"default"`. The script warns when another user shares the range, which is
   expected on the first host and documents this finding on every run.
 
 ## P-009 — First image pulled before `userns-remap` was active
-- **Symptom:** ADR-0002 says `userns-remap` is enabled "before the first
+- **Symptom:** [ADR-0002](adr/0002-os-and-docker.md) says `userns-remap` is enabled "before the first
   image pull". The sudo journal of day 1 shows `docker run hello-world`
   *before* `daemon.json` was written and Docker restarted.
 - **Verification:** `journalctl _COMM=sudo` order; `/var/lib/docker/image`
@@ -136,7 +162,7 @@ Chronological. Format: symptom → verification → cause → fix / decision.
   exists at that moment — nothing, in this case.
 - **Impact:** none: the unmapped store only holds `hello-world`, which no
   stack uses; the remapped daemon never reads it. It costs a few kilobytes.
-- **Fix:** `scripts/bootstrap.sh` writes `daemon.json` before
+- **Fix:** [`scripts/bootstrap.sh`](../scripts/bootstrap.sh) writes `daemon.json` before
   `apt-get install docker-ce`, so the first `dockerd` start already runs with
   the remap and the unmapped store is never populated. Lesson: configuration
   files take effect when the process starts, not when they are written —
@@ -146,7 +172,7 @@ Chronological. Format: symptom → verification → cause → fix / decision.
 - **Symptom:** first start of the GitLab container aborts with
   `Errno::EROFS: Read-only file system @ apply2files -
   /etc/gitlab/trusted-certs/ca.crt` (`certificate_helper.rb`,
-  `update_permissions`). `pki/ca.crt` had been bind-mounted read-only from
+  `update_permissions`). [`pki/ca.crt`](../pki/ca.crt) had been bind-mounted read-only from
   the repository clone into `/etc/gitlab/trusted-certs/`.
 - **Verification:** the Chef trace shows the failing step is
   `link_certificates → update_permissions`, i.e. a `chown`/`chmod` on the
@@ -159,7 +185,7 @@ Chronological. Format: symptom → verification → cause → fix / decision.
 - **Fix:** no mount. The certificate is copied into the volume with the
   container's root UID: `install -o 100000 -g 100000 -m 644 pki/ca.crt
   /srv/gitlab/config/trusted-certs/ca.crt` (documented as a first-start step
-  in `services/gitlab/README.md`). The copy travels with the volume in
+  in [`services/gitlab/README.md`](../services/gitlab/README.md)). The copy travels with the volume in
   backups, so a restore needs no extra step. Lesson: a bind mount is the
   wrong tool for a file the application wants to own.
 
@@ -173,7 +199,7 @@ Chronological. Format: symptom → verification → cause → fix / decision.
 - **Cause:** `compose.yaml` set `hostname: git.lab.test`. Docker writes a
   container's hostname with its own address into the container's
   `/etc/hosts`, and `/etc/hosts` wins over Docker's DNS. The proxy's network
-  alias for `git.lab.test` (ADR-0005, hairpin) was therefore never consulted;
+  alias for `git.lab.test` ([ADR-0005](adr/0005-reverse-proxy.md), hairpin) was therefore never consulted;
   any self-call through `external_url` reached the GitLab container itself,
   which listens on 80 only.
 - **Fix:** drop `hostname:` (Omnibus derives everything from `external_url`)
@@ -225,7 +251,7 @@ Chronological. Format: symptom → verification → cause → fix / decision.
   official compose file uses it on every start), the cost is ~45 s of
   application downtime per backup, and the alternative — `up -d --no-deps
   web worker` — may recreate containers, which a backup script should not do.
-  Recorded here and in `docs/backup-restore.md`.
+  Recorded here and in [`docs/backup-restore.md`](backup-restore.md).
 
 ## P-014 — `gitlab-backup` covers neither the SSH host keys nor `trusted-certs/`
 - **Symptom:** while writing `restore.sh`, the README's "Host prerequisites"
@@ -240,10 +266,10 @@ Chronological. Format: symptom → verification → cause → fix / decision.
   volume), outside everything `gitlab-backup create` archives. A rebuilt host
   would generate new keys and every clone over `:2222` would fail with
   "REMOTE HOST IDENTIFICATION HAS CHANGED". `trusted-certs/ca.crt` is a copy of
-  the repository's `pki/ca.crt`, placed by hand at first start (P-010).
+  the repository's [`pki/ca.crt`](../pki/ca.crt), placed by hand at first start ([P-010](#p-010--gitlab-reconfigure-fails-on-a-bind-mounted-ca-certificate)).
 - **Fix:** `backup.sh` adds `gitlab/ssh-host-keys.tar.gz` (numeric owners,
   inside the encrypted set); `restore.sh` unpacks it into
-  `/srv/gitlab/config/` before the first start and installs `pki/ca.crt` into
+  `/srv/gitlab/config/` before the first start and installs [`pki/ca.crt`](../pki/ca.crt) into
   `trusted-certs/` from the checkout. Lesson: the application's backup tool
   defines what *it* considers state; the reinstall checklist defines what the
   *service* needs — the difference is the backup gap.
@@ -286,8 +312,8 @@ Chronological. Format: symptom → verification → cause → fix / decision.
 
 ## P-017 — Small day-1 slips, bundled
 Recorded late (from the day-1 notes) because they were "too small" at the time;
-P-015 shows what that habit costs.
-- `pki/make-ca.sh` had a syntax error on first run (line 22) — caught by
+[P-015](#p-015--the-debian-13-cloud-image-has-no-git-but-the-reinstall-path-starts-with-git-clone) shows what that habit costs.
+- [`pki/make-ca.sh`](../pki/make-ca.sh) had a syntax error on first run (line 22) — caught by
   `bash -n` afterwards; since then every script is linted before it is run.
 - `chmod =x` instead of `chmod +x` on a script — `=x` *replaces* the mode with
   execute-only, so the file became unreadable for its owner; fixed with
@@ -295,7 +321,7 @@ P-015 shows what that habit costs.
 - A typo in the sshd drop-in heredoc — noticed by `sshd -t` before the reload,
   which is exactly why `bootstrap.sh` runs `sshd -t` and removes the file on
   failure instead of reloading blindly.
-- `git` missing on the cloud image — see P-015 for the day it repeated.
+- `git` missing on the cloud image — see [P-015](#p-015--the-debian-13-cloud-image-has-no-git-but-the-reinstall-path-starts-with-git-clone) for the day it repeated.
 
 ## P-018 — Webhook answered 200 on every delivery and linked nothing
 - **Symptom:** GitLab's webhook test and the real push/merge-request events
@@ -322,7 +348,7 @@ P-015 shows what that habit costs.
   the plan had assumed.
 - **Fix:** role `GitLab Integration` = *Show GitLab content* + *View work
   packages* + *Add comments*; an edit of the MR description re-sent the event
-  and the link appeared. Recorded in ADR-0014. Lessons: a `200` from a
+  and the link appeared. Recorded in [ADR-0014](adr/0014-gitlab-openproject-webhook.md). Lessons: a `200` from a
   webhook receiver means "accepted", not "done" — verify the effect in the
   data; and when a query returns nothing, check the join key before trusting
   the absence.
@@ -359,7 +385,7 @@ P-015 shows what that habit costs.
   that first start seeds a root password and writes the file, and the
   restore does not know about it.
 - **Fix:** `restore.sh` removes the file after the restore; runbook note in
-  `docs/backup-restore.md`. Not exercised by a full restore run since the
+  [`docs/backup-restore.md`](backup-restore.md). Not exercised by a full restore run since the
   change — the added line is an idempotent `rm -f`. Lesson: every "first
   start" side effect of a product is a candidate for stale state after a
   restore; walk the config volume after the test, not just the checklist.
@@ -370,20 +396,20 @@ P-015 shows what that habit costs.
   although GitLab never calls that URL — it only renders it as a link.
 - **Verification:** the same message GitLab shows for a webhook to a private
   address; inside the GitLab container `wiki.lab.test` resolves to Caddy's
-  address on the Docker network (the alias in `proxy/compose.yaml`); after
+  address on the Docker network (the alias in [`proxy/compose.yaml`](../proxy/compose.yaml)); after
   adding `wiki.lab.test` to Admin Area → Settings → Network → Outbound
   requests → allowlist, the save succeeded.
 - **Cause:** GitLab's URL validator applies the outbound-request policy to
   *every* integration URL, independent of whether the integration makes
-  requests; the assumption in ADR-0014's first draft ("a plain link needs no
+  requests; the assumption in [ADR-0014](adr/0014-gitlab-openproject-webhook.md)'s first draft ("a plain link needs no
   exception") was wrong.
 - **Fix:** allowlist entry per name (`pm.lab.test`, `wiki.lab.test`); the
-  blanket "allow local network" switch stays off. ADR-0014 amended.
+  blanket "allow local network" switch stays off. [ADR-0014](adr/0014-gitlab-openproject-webhook.md) amended.
 
 ## P-022 — The second seeded OpenProject project kept the wiki module
 - **Symptom:** the database check for the documentation hub listed
   `your-scrum-project | wiki` although the docs stated the wiki module was
-  disabled (ADR-0003).
+  disabled ([ADR-0003](adr/0003-project-management-tool.md)).
 - **Verification:** `enabled_modules` join `projects` where `name='wiki'`
   returned one row for the project the seeder creates next to
   `demo-project`; the day-2 step had been done in `demo-project` only.

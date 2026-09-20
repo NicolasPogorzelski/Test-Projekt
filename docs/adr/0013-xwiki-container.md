@@ -4,13 +4,13 @@
 Accepted
 
 ## Context
-XWiki (LTS 17.10, ADR: `docs/architecture.md`) ships as a Java web
+XWiki (LTS 17.10, ADR: [`docs/architecture.md`](../architecture.md)) ships as a Java web
 application in Tomcat 10 on JRE 21; the official image
 `xwiki:17.10.13-postgres-tomcat` (https://github.com/xwiki/xwiki-docker) has
 no non-root user, and its entrypoint edits files inside the image on the
 first start (`hibernate.cfg.xml`, `xwiki.cfg`). Extensions such as the LDAP
 authenticator are installed at runtime from `extensions.xwiki.org` over
-HTTPS. Behind Caddy (ADR-0005) Tomcat sees plain HTTP from the proxy's
+HTTPS. Behind Caddy ([ADR-0005](0005-reverse-proxy.md)) Tomcat sees plain HTTP from the proxy's
 address.
 
 ## Decisions
@@ -46,17 +46,17 @@ address.
 
 ### 3. Proxy headers via Tomcat's `RemoteIpValve`
 - **Options:** (a) `RemoteIpValve` in a versioned `server.xml`
-  (`services/xwiki/tomcat/server.xml`, mounted read-only);
+  ([`services/xwiki/tomcat/server.xml`](../../services/xwiki/tomcat/server.xml), mounted read-only);
   (b) `xwiki.url.protocol=https` in `xwiki.cfg`.
 - **Decision: (a).** Caddy terminates TLS and forwards plain HTTP with
   `X-Forwarded-Proto` and `X-Forwarded-For`. Without the valve, XWiki
   builds `http://` links and redirects, and its logs show the proxy as the
   client. The valve rewrites scheme and client address for requests from
   `internalProxies` — the Docker address pool, with the same residual risk
-  and extension step as GitLab's `real_ip` (ADR-0010 §3). (b) fixes only
+  and extension step as GitLab's `real_ip` ([ADR-0010](0010-gitlab-container.md) §3). (b) fixes only
   the links.
 - The mount is read-only because Tomcat only reads the file (contrast
-  P-010, where the application chowned the mounted file).
+  [P-010](../problems.md#p-010--gitlab-reconfigure-fails-on-a-bind-mounted-ca-certificate), where the application chowned the mounted file).
 
 ### 4. Heap and memory limit
 - **Decision: `JAVA_OPTS=-Xmx1536m`, `mem_limit` 2.5 GiB (raised to 3 GiB after measuring, below).** The JVM
@@ -76,7 +76,7 @@ address.
   Manager, the authenticator activated with one `xwiki.cfg` line kept in
   the data volume (the only way in this version), configured in the admin
   UI with `svc-xwiki` and the `wiki_user` group. Took ~45 minutes instead
-  of 30 because of the three-part set-up (P-012); accepted, because the
+  of 30 because of the three-part set-up ([P-012](../problems.md#p-012--xwiki-ldap-installed-configured-and-still-invalid-credentials)); accepted, because the
   cause was understood and the remaining steps were mechanical.
 
 ## Consequences
@@ -84,12 +84,12 @@ address.
   a JDBC URL by the entrypoint.
 - PostgreSQL is initialised with `--locale-provider=builtin --locale=C.UTF-8`
   as in XWiki's official compose file — the reason PostgreSQL 17 was chosen
-  (`docs/architecture.md`).
+  ([`docs/architecture.md`](../architecture.md)).
 - Two host-side artefacts exist outside the repository and are part of the
-  reinstall: `/srv/xwiki/cacerts` (regenerable from `pki/ca.crt`) and the
+  reinstall: `/srv/xwiki/cacerts` (regenerable from [`pki/ca.crt`](../../pki/ca.crt)) and the
   data volume.
 - Verified 2026-09-19: root with `capdrop=[ALL]` starts and serves, the
   database runs non-root and read-only, `keytool -list` inside the
   container shows `lab-test-root-ca` with the CA's fingerprint, redirects
   through Caddy carry `https://` (RemoteIpValve), LDAP sign-in works with
-  the `wiki_user` filter (P-012 for what it took).
+  the `wiki_user` filter ([P-012](../problems.md#p-012--xwiki-ldap-installed-configured-and-still-invalid-credentials) for what it took).

@@ -8,8 +8,8 @@ OpenProject), [ADR-0012](../../docs/adr/0012-openproject-container.md)
 - `compose.yaml` — five definitions: `db` (PostgreSQL 17, non-root),
   `cache` (memcached), `seeder` (one-off: schema load / migrations, exits),
   `web` (Puma, reached by Caddy as `openproject:8080`), `worker` (background
-  jobs). No cron (ADR-0012).
-- `.env` — two hex secrets, see `.env.example` in the repository root. Not
+  jobs). No cron ([ADR-0012](../../docs/adr/0012-openproject-container.md)).
+- `.env` — two hex secrets, see [`.env.example`](../../.env.example) in the repository root. Not
   in git.
 
 ## Host prerequisites
@@ -17,7 +17,7 @@ OpenProject), [ADR-0012](../../docs/adr/0012-openproject-container.md)
 /srv/openproject/assets/   owner 101000 (app user 1000 + 100000)      -> /var/openproject/assets (uploads)
 /srv/openproject/db/       owner 100070 (postgres user 70 + 100000)   -> /var/lib/postgresql/data
 ```
-Created by `scripts/bootstrap.sh`. Networks `edge` and `ldap` exist
+Created by [`scripts/bootstrap.sh`](../../scripts/bootstrap.sh). Networks `edge` and `ldap` exist
 (bootstrap); `openproject_internal` is created by this stack and is
 `internal: true` (db and cache are unreachable from anywhere else).
 
@@ -41,16 +41,16 @@ seeded default; the first sign-in forces a password change).
 3. Administration → System settings → General: check *Host name*
    `pm.lab.test`, *Protocol* HTTPS.
 4. Administration → Projects → **New project**: "New projects are public by
-   default" **off**; default modules: **Wiki off**, **GitLab on** (ADR-0003,
-   `docs/integration.md`). Then check *every* existing project's
+   default" **off**; default modules: **Wiki off**, **GitLab on** ([ADR-0003](../../docs/adr/0003-project-management-tool.md),
+   [`docs/integration.md`](../../docs/integration.md)). Then check *every* existing project's
    *Project settings → Modules* — the seeder creates two demo projects and
-   both start with the wiki on (P-022). Verify:
+   both start with the wiki on ([P-022](../../docs/problems.md#p-022--the-second-seeded-openproject-project-kept-the-wiki-module)). Verify:
    `select p.identifier, em.name from enabled_modules em join projects p on p.id=em.project_id where em.name='wiki';`
    must return no rows.
-5. LDAP (30-minute time-box, ADR-0012 §4): Administration → Authentication →
+5. LDAP (30-minute time-box, [ADR-0012](../../docs/adr/0012-openproject-container.md) §4): Administration → Authentication →
    LDAP authentication → *New*:
    - Name `lldap`, Host `lldap`, Port `3890`, Connection encryption *none*
-     (internal network, ADR-0006)
+     (internal network, [ADR-0006](../../docs/adr/0006-identity.md))
    - Account `uid=svc-openproject,ou=people,dc=lab,dc=test`, password of
      `svc-openproject` from lldap
    - Base DN `ou=people,dc=lab,dc=test`, Filter
@@ -80,10 +80,10 @@ sudo docker stats --no-stream openproject openproject-worker openproject-db open
   (seeder re-runs migrations, web/worker restart).
 - Upgrade: bump the image tag, `up -d`; the seeder migrates the schema.
 - Backup: `pg_dump` from `openproject-db` + `/srv/openproject/assets` +
-  `.env` (`SECRET_KEY_BASE`) — ADR-0008, day 3.
+  `.env` (`SECRET_KEY_BASE`) — [ADR-0008](../../docs/adr/0008-backup-and-reinstall.md), day 3.
 - Not running: `cron` (reminders, digests) — add
   `command: "./docker/prod/cron"` as a sixth service once a mail server
-  exists (ADR-0012 §2).
+  exists ([ADR-0012](../../docs/adr/0012-openproject-container.md) §2).
 
 Results on 2026-09-19 (first build): seeder exited 0 after ~1 minute, web
 healthy; `db` 70:70 with `[ALL]` dropped and read-only, `cache` as
@@ -91,4 +91,4 @@ healthy; `db` 70:70 with `[ALL]` dropped and read-only, `cache` as
 web 1.56 GiB / worker 640 MiB / db 65 MiB / cache 2 MiB at idle (web limit
 raised to 3 GiB). Sign-in through Caddy with the hardened headers plus
 OpenProject's own Content-Security-Policy; LDAP verified with a member and a
-non-member of `pm_user` (`docs/integration.md`).
+non-member of `pm_user` ([`docs/integration.md`](../../docs/integration.md)).

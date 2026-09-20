@@ -42,7 +42,7 @@ GitLab CE, image `gitlab/gitlab-ce:<x.y.z>-ce.0` with a pinned version.
   reachable only through the reverse proxy, sign-up disabled, 2FA enforced,
   unused subsystems (registry, pages, Prometheus) disabled.
 - **Root inside the container:** no rootless image exists; `userns-remap`
-  (ADR-0002) limits the impact.
+  ([ADR-0002](0002-os-and-docker.md)) limits the impact.
 - **Backup trap:** `gitlab-backup` does not include `gitlab-secrets.json` and
   `gitlab.rb`; both are backed up explicitly and checked in the restore test.
 - **Git over SSH:** GitLab's SSH is published on host port 2222 (the proxy is

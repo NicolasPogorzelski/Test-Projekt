@@ -15,7 +15,7 @@ Design: [ADR-0005](../docs/adr/0005-reverse-proxy.md). Implicit behaviour:
 /srv/proxy/config/  owner 101000            autosaved configuration
 docker network edge (external)
 ```
-`101000` = container UID 1000 + the `userns-remap` offset 100000 (ADR-0002).
+`101000` = container UID 1000 + the `userns-remap` offset 100000 ([ADR-0002](../docs/adr/0002-os-and-docker.md)).
 
 ## Validate before starting
 On the workstation, with the real image and the issued certificates mounted:
@@ -26,7 +26,7 @@ podman run --rm -v ./proxy/Caddyfile:/etc/caddy/Caddyfile:ro,Z -v ~/lab-pki/issu
 On the host: `sudo docker compose -f proxy/compose.yaml config --quiet`.
 
 ## Basic auth in front of the lldap UI (once, on the host)
-`ldap.lab.test` carries an additional HTTP basic-auth layer (ADR-0011): an
+`ldap.lab.test` carries an additional HTTP basic-auth layer ([ADR-0011](../docs/adr/0011-lldap-container.md)): an
 independent credential before the directory's own login. The hash file is
 not in the repository.
 ```bash
@@ -61,6 +61,6 @@ expected answer while a backend is not running; port 80 must answer `308`.
 
 ## Hardening summary
 non-root (`1000:1000`) · `cap_drop: ALL` + `cap_add: NET_BIND_SERVICE` (file
-capability on the binary, P-005) · `no-new-privileges` · read-only root fs,
+capability on the binary, [P-005](../docs/problems.md#p-005--caddy-exits-with-exec-usrbincaddy-operation-not-permitted)) · `no-new-privileges` · read-only root fs,
 `/tmp` as tmpfs · `admin off` · HTTP/1.1 and HTTP/2 only · HSTS,
 `X-Content-Type-Options`, `Referrer-Policy`, `Server` header removed.

@@ -4,13 +4,13 @@
 Accepted
 
 ## Context
-ADR-0004 chose GitLab CE (Omnibus image). Omnibus is a full distribution in
+[ADR-0004](0004-git-server.md) chose GitLab CE (Omnibus image). Omnibus is a full distribution in
 one container: Rails (Puma), Sidekiq, PostgreSQL, Redis, NGINX, Gitaly,
 gitlab-shell with its own sshd, supervised by runit, which starts as root and
 drops to a dedicated user per service. It is configured through one Ruby file
 (`/etc/gitlab/gitlab.rb`) that `gitlab-ctl reconfigure` turns into the
-individual service configurations. Running it behind Caddy (ADR-0005) with
-`userns-remap` (ADR-0002) raises six decisions that neither ADR covers.
+individual service configurations. Running it behind Caddy ([ADR-0005](0005-reverse-proxy.md)) with
+`userns-remap` ([ADR-0002](0002-os-and-docker.md)) raises six decisions that neither ADR covers.
 
 ## Decisions
 
@@ -30,7 +30,7 @@ individual service configurations. Running it behind Caddy (ADR-0005) with
   is unverified; at 3–5 minutes per GitLab start that test was not worth the
   time-box. Known and deliberately not taken.
 - **Consequence:** the backup needs `gitlab-secrets.json` and the volumes;
-  `gitlab.rb` on the host is only the template (ADR-0004 listed it as a
+  `gitlab.rb` on the host is only the template ([ADR-0004](0004-git-server.md) listed it as a
   backup item — now optional).
 
 ### 2. Container hardening
@@ -41,7 +41,7 @@ individual service configurations. Running it behind Caddy (ADR-0005) with
   `exec` from gaining privileges via setuid bits or file capabilities; it
   does not stop an already-root process from *dropping* privileges with
   `setuid()`, which is what runit does — so Omnibus is expected to run.
-  Verified at first start (see `services/gitlab/README.md`).
+  Verified at first start (see [`services/gitlab/README.md`](../../services/gitlab/README.md)).
 - **Rejected (c) for now:** GitLab documents no minimal capability set; the
   list would be derived by trial (SETUID, SETGID, CHOWN, DAC_OVERRIDE,
   FOWNER, FSETID, KILL, SYS_CHROOT, NET_BIND_SERVICE as a starting point),
@@ -64,7 +64,7 @@ individual service configurations. Running it behind Caddy (ADR-0005) with
 - **Decision: (a)** — `gitlab_rails['nginx']['real_ip_trusted_addresses']`,
   `real_ip_header = X-Forwarded-For`, `real_ip_recursive = on`
   (https://docs.gitlab.com/omnibus/settings/nginx/). The broad range survives
-  a rebuild without pinned subnets (`scripts/bootstrap.sh` deliberately does
+  a rebuild without pinned subnets ([`scripts/bootstrap.sh`](../../scripts/bootstrap.sh) deliberately does
   not fix them).
 - **Accepted residual risk:** any container on `edge` (the other stacks) could
   send a forged `X-Forwarded-For` directly to `gitlab:80`. An attacker in that
@@ -81,13 +81,13 @@ Under `userns-remap`, host UID 0 has no mapping inside the container, so
 root-owned `/srv/gitlab/*` would be read-only for Omnibus and the first
 `reconfigure` would fail. Omnibus does not know about the remap (without it,
 container root *is* host root); the consequence is ours to implement. It is
-implemented in `scripts/bootstrap.sh` (owner table: `gitlab/*` → 100000,
+implemented in [`scripts/bootstrap.sh`](../../scripts/bootstrap.sh) (owner table: `gitlab/*` → 100000,
 including `config/trusted-certs`, which `reconfigure` writes rehash symlinks
 into) rather than as a runbook step, so a reinstall cannot forget it.
 The CA certificate is *copied* into `trusted-certs/` with owner 100000, not
 bind-mounted from the repository: `reconfigure` chowns and chmods every file
 there, which is impossible on a read-only mount and, on a read-write mount,
-on a file owned by an unmapped host UID (P-010).
+on a file owned by an unmapped host UID ([P-010](../problems.md#p-010--gitlab-reconfigure-fails-on-a-bind-mounted-ca-certificate)).
 
 ### 5. Initial root password
 - **Options:** (a) `GITLAB_ROOT_PASSWORD` from `.env`; (b) let GitLab generate
@@ -97,7 +97,7 @@ on a file owned by an unmapped host UID (P-010).
   (visible via `docker inspect`) that is used exactly once and never again.
   A secret that is no longer needed should not exist. After a restore the
   password comes from the database anyway, so (a) has no reinstall advantage.
-- **Consequence:** `.env.example` has no `GITLAB_ROOT_PASSWORD`; the runbook
+- **Consequence:** [`.env.example`](../../.env.example) has no `GITLAB_ROOT_PASSWORD`; the runbook
   reads the file once.
 
 ### 6. Memory limit

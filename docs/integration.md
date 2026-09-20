@@ -2,10 +2,10 @@
 
 ## 1. Shared identity — LDAP (lldap)
 
-Directory layout, bind users, groups: see ADR-0006.
+Directory layout, bind users, groups: see [ADR-0006](adr/0006-identity.md).
 
 ### GitLab
-Configured in `services/gitlab/compose.yaml` (`GITLAB_OMNIBUS_CONFIG`,
+Configured in [`services/gitlab/compose.yaml`](../services/gitlab/compose.yaml) (`GITLAB_OMNIBUS_CONFIG`,
 `gitlab_rails['ldap_servers']`): host `lldap`, port 3890, plain LDAP on the
 internal network, bind user `uid=svc-gitlab,ou=people,dc=lab,dc=test`
 (member of `lldap_strict_readonly`), base `ou=people,dc=lab,dc=test`,
@@ -50,7 +50,7 @@ bind `uid=svc-xwiki,ou=people,dc=lab,dc=test`, base `ou=people,dc=lab,dc=test`,
 restrict to group `cn=wiki_user,ou=groups,dc=lab,dc=test`, UID `uid`,
 fields `givenName`/`sn`/`mail`, local login kept as fallback for `admin`.
 Registration and anonymous reading are denied, so LDAP is the only entry for
-non-admins. Full steps: `services/xwiki/README.md`.
+non-admins. Full steps: [`services/xwiki/README.md`](../services/xwiki/README.md).
 
 Verified 2026-09-19: sign-in as `alice` (member of `wiki_user`) created her
 profile, sign-in as `bob` (no group) was refused. Diagnostics that got
@@ -62,7 +62,7 @@ installed but not the active auth service.
 All three services authenticate against the same lldap directory with a
 read-only bind user each and one access group each (`git_user`, `pm_user`,
 `wiki_user`); every integration was verified with a member and a
-non-member. On-/offboarding is one place: `services/lldap/README.md`.
+non-member. On-/offboarding is one place: [`services/lldap/README.md`](../services/lldap/README.md).
 
 ## 2. GitLab ↔ OpenProject
 Native integration (OpenProject ≥ 13.4, Community Edition):
@@ -72,7 +72,7 @@ enabled per project; GitLab side — project webhook to
 merge request and pipeline events, SSL verification **enabled** (requires the
 private CA in `/etc/gitlab/trusted-certs/`).
 **Built and verified 2026-09-20** on the rebuilt host, after the restore
-test (ADR-0014 for the two security decisions: GitLab's outbound allowlist
+test ([ADR-0014](adr/0014-gitlab-openproject-webhook.md) for the two security decisions: GitLab's outbound allowlist
 holds only `pm.lab.test` instead of "allow local network"; the token belongs
 to a local user with three permissions).
 
@@ -94,7 +94,7 @@ description appears on work package #37, tab *GitLab*, first as `ready`
 (open) and after merging as `merged`; every delivery is logged by
 OpenProject as `POST /webhooks/gitlab … status=200 user=<integration user>`
 (`docker logs openproject`). The first attempts linked nothing although
-every delivery returned 200 — see P-018 for the permission the role was
+every delivery returned 200 — see [P-018](problems.md#p-018--webhook-answered-200-on-every-delivery-and-linked-nothing) for the permission the role was
 missing and how the database showed it.
 
 ## 3. XWiki ↔ OpenProject and GitLab — the documentation hub
@@ -116,7 +116,7 @@ features the products ship:
 
 | Direction | Mechanism | Where |
 |---|---|---|
-| GitLab → XWiki | *External wiki* integration: the project's "Wiki" menu entry opens the XWiki project page; the built-in wiki is disabled so there is one place for documentation (ADR-0003, now enforced in the UI) | instance default → `https://wiki.lab.test/bin/view/Projects/` (inherited by every project, verified with a freshly created project `inherit-test`); project `smoke-test` overrides with its own page |
+| GitLab → XWiki | *External wiki* integration: the project's "Wiki" menu entry opens the XWiki project page; the built-in wiki is disabled so there is one place for documentation ([ADR-0003](adr/0003-project-management-tool.md), now enforced in the UI) | instance default → `https://wiki.lab.test/bin/view/Projects/` (inherited by every project, verified with a freshly created project `inherit-test`); project `smoke-test` overrides with its own page |
 | OpenProject → XWiki | project attribute `Documentation` (type Link, regex `^https://wiki\.lab\.test/`, visible to all members, searchable) shown on the project overview | attribute defined once in Administration → Projects → Project attributes; value per project |
 | XWiki → GitLab, OpenProject | the project page `Projects/<name>` links repository, work-package list and reference work package; `Projects` is the index | created by `alice` (proves members can create, move, rename and delete their pages) |
 | GitLab → OpenProject | webhook (§2) | — |
@@ -124,13 +124,13 @@ features the products ship:
 GitLab's URL validator applies the outbound-request policy to integration
 URLs as well, not only to calls: saving the External wiki URL failed with
 "Requests to the local network are not allowed" until `wiki.lab.test` was
-added next to `pm.lab.test` in the allowlist (ADR-0014, P-021). The global
+added next to `pm.lab.test` in the allowlist ([ADR-0014](adr/0014-gitlab-openproject-webhook.md), [P-021](problems.md#p-021--gitlab-refuses-the-external-wiki-url-requests-to-the-local-network-are-not-allowed)). The global
 "allow local network" switch stays off.
 
 OpenProject defaults adjusted at the same time (Administration → Projects →
 New project): new projects private, default modules without *Wiki* and with
 *GitLab*; the second seeded project (`your-scrum-project`) still had the
-wiki module on — disabled (P-022). Verified in the database: no project with
+wiki module on — disabled ([P-022](problems.md#p-022--the-second-seeded-openproject-project-kept-the-wiki-module)). Verified in the database: no project with
 module `wiki`, `default_projects_public = 0`, module list contains `gitlab`.
 
 Verification 2026-09-20, as `alice`: every link of the circle lands — XWiki

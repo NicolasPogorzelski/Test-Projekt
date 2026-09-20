@@ -8,14 +8,14 @@ decisions). Client configuration per service: [`docs/integration.md`](../../docs
 - `compose.yaml` — one rootless container: UI on `lldap:17170` (reached by
   Caddy as `https://ldap.lab.test`), LDAP on `lldap:3890` (internal network
   `ldap` only, never published).
-- `.env` — three secrets, see `.env.example` in the repository root. Not in
+- `.env` — three secrets, see [`.env.example`](../../.env.example) in the repository root. Not in
   git.
 
 ## Host prerequisites
 ```
 /srv/lldap/   owner 101000 (container UID 1000 + 100000)   -> /data: lldap_config.toml, users.db
 ```
-Created by `scripts/bootstrap.sh`. Networks `edge` and `ldap` exist (bootstrap).
+Created by [`scripts/bootstrap.sh`](../../scripts/bootstrap.sh). Networks `edge` and `ldap` exist (bootstrap).
 
 ## First start
 ```
@@ -91,4 +91,4 @@ Results on 2026-09-19 (first build): started on the first attempt with
 `read_only` and `cap_drop: ALL`; the gate answers 401 before lldap is
 reached; `gitlab-rake gitlab:ldap:check` bound as `svc-gitlab` and returned
 exactly the `git_user` member; positive and negative sign-in as documented in
-`docs/integration.md`.
+[`docs/integration.md`](../../docs/integration.md).

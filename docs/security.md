@@ -8,7 +8,7 @@ planned or was dropped for time.
 ## Host
 
 Every row except the provider firewall and the deploy key is applied by
-`scripts/bootstrap.sh`; its self-test checks the effective state (`docker
+[`scripts/bootstrap.sh`](../scripts/bootstrap.sh); its self-test checks the effective state (`docker
 info`, `sshd -T`, `sudo -l`, `apt-cache policy`) and fails on any deviation.
 The files named in "Where" are what the script writes.
 
@@ -18,7 +18,7 @@ The files named in "Where" are what the script writes.
 | Hetzner Cloud Firewall: inbound 22, 80, 443, 2222 only | reduce exposed surface before the host | Hetzner console | A.8.20 network security | done |
 | unattended-upgrades enabled for Debian origins (daily timers) | timely security patches from Debian | `/etc/apt/apt.conf.d/20auto-upgrades`, `50unattended-upgrades` (package default) | A.8.8 technical vulnerabilities | done |
 | Docker CE repository key scoped with `Signed-By`; key fingerprint compared with the value pinned in `bootstrap.sh` on every run | limit reach of the third-party key; detect a swapped key at the download URL | `/etc/apt/keyrings/docker.asc`, `/etc/apt/sources.list.d/docker.sources` | A.8.19 software installation | done (day 1: manual `gpg --show-keys`; since day 2: checked by the script) |
-| `userns-remap` with a fixed subordinate range (`dockremap:100000:65536`) | container root is unprivileged on the host; fixed range keeps bind-mount owners reproducible (P-008) | `/etc/docker/daemon.json`, `/etc/subuid`, `/etc/subgid` | A.8.9 configuration management | done |
+| `userns-remap` with a fixed subordinate range (`dockremap:100000:65536`) | container root is unprivileged on the host; fixed range keeps bind-mount owners reproducible ([P-008](problems.md#p-008--dockremap-received-the-same-subordinate-range-as-the-admin-user)) | `/etc/docker/daemon.json`, `/etc/subuid`, `/etc/subgid` | A.8.9 configuration management | done |
 | `icc: false` and `no-new-privileges: true` as daemon defaults | a container started without `networks:` is isolated instead of joined to every other on the default bridge; every container inherits the no-setuid rule the stacks set individually | `/etc/docker/daemon.json` (bootstrap) | A.8.9 configuration management | done (day 3, CIS 2.2 / 2.14) |
 | auditd watch rules for the Docker binaries, sockets, state and configuration (`-k docker`) | changes to `daemon.json`, the socket or `/var/lib/docker` leave a trace (`ausearch -k docker`) | `/etc/audit/rules.d/docker.rules` (bootstrap) | A.8.15 logging | done (day 3, CIS 1.1.3–1.1.18) |
 | Docker used via `sudo`; no `docker` group membership; read-only sudoers rule for unattended checks | `docker` group is root-equivalent without password or audit trail | `/etc/sudoers.d/docker-readonly` | A.8.2 privileged access rights, A.8.15 logging | done |
@@ -33,10 +33,10 @@ The files named in "Where" are what the script writes.
 | pinned image versions | reproducibility, deliberate upgrades | every `compose.yaml` | done |
 | no `ports:` except Caddy and GitLab SSH | backends unreachable from outside | every `compose.yaml` | done |
 | per-stack internal networks | DBs unreachable from other stacks | `openproject_internal` (db, cache), `xwiki_internal` (db) — both `internal: true` | done |
-| `cap_drop: [ALL]`, `security_opt: [no-new-privileges:true]`, `read_only` where possible | limit what a compromised process can do | every `compose.yaml` (exceptions documented) | done: proxy, lldap, both PostgreSQL and memcached with all three; openproject web/worker non-root with `no-new-privileges`; xwiki as root but with `cap_drop: ALL` (image needs root, needs no capability — ADR-0013); gitlab `no-new-privileges` only (Omnibus needs root and user switching, ADR-0010) |
-| Caddy: `user: 1000:1000`, `cap_drop: ALL` + `cap_add: NET_BIND_SERVICE` (the binary's file capability, see P-005), `read_only`, `no-new-privileges`, `admin off`, HTTP/3 off | the only Internet-facing process runs with one capability and a read-only filesystem | `proxy/compose.yaml`, `proxy/Caddyfile` | done |
-| non-root images where available (lldap) | no root inside the container at all | `services/lldap/compose.yaml` (`-rootless` image, `user: 1000:1000`, `cap_drop: ALL`, `read_only`) | done (lldap); Caddy runs non-root too |
-| resource limits (`mem_limit`) | one runaway container cannot starve the host | gitlab 8 GiB (ADR-0010), lldap 256 MB, openproject web 3 GiB / worker 1.5 GiB / db 1 GiB / cache 128 MB (ADR-0012), xwiki 3 GiB with a 1.5 GiB JVM heap / db 1 GiB (ADR-0013) | done |
+| `cap_drop: [ALL]`, `security_opt: [no-new-privileges:true]`, `read_only` where possible | limit what a compromised process can do | every `compose.yaml` (exceptions documented) | done: proxy, lldap, both PostgreSQL and memcached with all three; openproject web/worker non-root with `no-new-privileges`; xwiki as root but with `cap_drop: ALL` (image needs root, needs no capability — [ADR-0013](adr/0013-xwiki-container.md)); gitlab `no-new-privileges` only (Omnibus needs root and user switching, [ADR-0010](adr/0010-gitlab-container.md)) |
+| Caddy: `user: 1000:1000`, `cap_drop: ALL` + `cap_add: NET_BIND_SERVICE` (the binary's file capability, see [P-005](problems.md#p-005--caddy-exits-with-exec-usrbincaddy-operation-not-permitted)), `read_only`, `no-new-privileges`, `admin off`, HTTP/3 off | the only Internet-facing process runs with one capability and a read-only filesystem | [`proxy/compose.yaml`](../proxy/compose.yaml), [`proxy/Caddyfile`](../proxy/Caddyfile) | done |
+| non-root images where available (lldap) | no root inside the container at all | [`services/lldap/compose.yaml`](../services/lldap/compose.yaml) (`-rootless` image, `user: 1000:1000`, `cap_drop: ALL`, `read_only`) | done (lldap); Caddy runs non-root too |
+| resource limits (`mem_limit`) | one runaway container cannot starve the host | gitlab 8 GiB ([ADR-0010](adr/0010-gitlab-container.md)), lldap 256 MB, openproject web 3 GiB / worker 1.5 GiB / db 1 GiB / cache 128 MB ([ADR-0012](adr/0012-openproject-container.md)), xwiki 3 GiB with a 1.5 GiB JVM heap / db 1 GiB ([ADR-0013](adr/0013-xwiki-container.md)) | done |
 
 ## Transport
 | Measure | Why | Status |
@@ -44,28 +44,28 @@ The files named in "Where" are what the script writes.
 | TLS everywhere at the edge, private CA, per-service certificates | task item 5; confidentiality and authenticity | done |
 | certificate verification never disabled in any client | otherwise TLS between services is worthless | done |
 | LDAPS (planned) | bind passwords not in clear text | planned |
-| HSTS at the proxy | prevent downgrade after first visit | done (not on Caddy's own error responses, P-023) |
+| HSTS at the proxy | prevent downgrade after first visit | done (not on Caddy's own error responses, [P-023](problems.md#p-023--the-lldap-gates-401-carries-none-of-the-proxys-security-headers)) |
 | `X-Frame-Options: SAMEORIGIN` as a proxy default for backends that send none (XWiki, lldap UI); GitLab and OpenProject keep their own | clickjacking | done (day 3, measured from outside: XWiki sent no frame protection before) |
 
 ## Applications
 | Measure | Where | Status |
 |---|---|---|
-| OpenProject: new projects private by default, default modules without Wiki (XWiki is the documentation tool, ADR-0003) and with GitLab; no project has the wiki module (verified in the database, P-022) | Administration → Projects → New project; per-project Modules | done (day 3) |
+| OpenProject: new projects private by default, default modules without Wiki (XWiki is the documentation tool, [ADR-0003](adr/0003-project-management-tool.md)) and with GitLab; no project has the wiki module (verified in the database, [P-022](problems.md#p-022--the-second-seeded-openproject-project-kept-the-wiki-module)) | Administration → Projects → New project; per-project Modules | done (day 3) |
 | sign-up disabled; XWiki additionally denies anonymous reading | GitLab (admin settings, verified: `/users/sign_up` redirects to sign-in), OpenProject (self-registration disabled), XWiki (Register and View denied for unregistered users — both URLs redirect to login); LDAP is the only entry for non-admins everywhere | done |
-| 2FA enforced for admins, Admin Mode (re-authentication for the admin area), no password authentication for Git over HTTPS (tokens only) | GitLab admin settings (`services/gitlab/README.md`) | done |
+| 2FA enforced for admins, Admin Mode (re-authentication for the admin area), no password authentication for Git over HTTPS (tokens only) | GitLab admin settings ([`services/gitlab/README.md`](../services/gitlab/README.md)) | done |
 | per-service read-only LDAP bind users (`lldap_strict_readonly`); per-service access groups (`git_user`, `wiki_user`, `pm_user`) | lldap; GitLab, OpenProject and XWiki each verified with a member and a non-member of their group | done |
-| lldap web UI behind an additional Caddy `basic_auth` gate (independent credential, hash outside the repository); LDAP port never published | the directory is the root of trust for all services and has neither MFA nor login rate limiting; before production: forward-auth with MFA or admin-network restriction (ADR-0011) | `proxy/Caddyfile`, `/srv/proxy/config/ldap-ui.auth` | done |
-| unused GitLab subsystems disabled (registry, Pages, KAS, Prometheus, outgoing mail) | `GITLAB_OMNIBUS_CONFIG` in `services/gitlab/compose.yaml`; verified with `gitlab-ctl status` | done |
-| proxy headers trusted only from the Docker address pool: GitLab `real_ip`, Tomcat `RemoteIpValve` for XWiki | correct client IP in logs and per-IP limits, https links behind the proxy; a forged `X-Forwarded-For` from the Internet is ignored (verified on GitLab) | `services/gitlab/compose.yaml`, `services/xwiki/tomcat/server.xml` | done (residual risk: neighbour containers, ADR-0010 §3) |
+| lldap web UI behind an additional Caddy `basic_auth` gate (independent credential, hash outside the repository); LDAP port never published | the directory is the root of trust for all services and has neither MFA nor login rate limiting; before production: forward-auth with MFA or admin-network restriction ([ADR-0011](adr/0011-lldap-container.md)) | [`proxy/Caddyfile`](../proxy/Caddyfile), `/srv/proxy/config/ldap-ui.auth` | done |
+| unused GitLab subsystems disabled (registry, Pages, KAS, Prometheus, outgoing mail) | `GITLAB_OMNIBUS_CONFIG` in [`services/gitlab/compose.yaml`](../services/gitlab/compose.yaml); verified with `gitlab-ctl status` | done |
+| proxy headers trusted only from the Docker address pool: GitLab `real_ip`, Tomcat `RemoteIpValve` for XWiki | correct client IP in logs and per-IP limits, https links behind the proxy; a forged `X-Forwarded-For` from the Internet is ignored (verified on GitLab) | [`services/gitlab/compose.yaml`](../services/gitlab/compose.yaml), [`services/xwiki/tomcat/server.xml`](../services/xwiki/tomcat/server.xml) | done (residual risk: neighbour containers, [ADR-0010](adr/0010-gitlab-container.md) §3) |
 
 ## Secrets and data
-See ADR-0009 and ADR-0008: `.env` outside git, gitleaks pre-commit,
+See [ADR-0009](adr/0009-secrets-domain-repo.md) and [ADR-0008](adr/0008-backup-and-reinstall.md): `.env` outside git, gitleaks pre-commit,
 encrypted off-host backups, CA key offline.
 
 | Measure | Why | Where | ISO 27001:2022 | Status |
 |---|---|---|---|---|
-| gitleaks on every commit (staged changes, fails closed if the binary is missing) and on every push/PR in CI (full history) | a credential that reaches git history stays there; catching it before the commit is the only cheap point | `scripts/git-hooks/pre-commit` (`core.hooksPath`), `.github/workflows/secret-scan.yml` | A.8.28 secure coding | done |
-| custom gitleaks rule: any IPv4 address except loopback, `0.0.0.0` and RFC 5737 documentation ranges | the repository is public after hand-in; only `*.lab.test` names and placeholders may identify the host | `.gitleaks.toml` (used by hook and CI alike) | A.5.12 classification of information | done |
+| gitleaks on every commit (staged changes, fails closed if the binary is missing) and on every push/PR in CI (full history) | a credential that reaches git history stays there; catching it before the commit is the only cheap point | [`scripts/git-hooks/pre-commit`](../scripts/git-hooks/pre-commit) (`core.hooksPath`), [`.github/workflows/secret-scan.yml`](../.github/workflows/secret-scan.yml) | A.8.28 secure coding | done |
+| custom gitleaks rule: any IPv4 address except loopback, `0.0.0.0` and RFC 5737 documentation ranges | the repository is public after hand-in; only `*.lab.test` names and placeholders may identify the host | [`.gitleaks.toml`](../.gitleaks.toml) (used by hook and CI alike) | A.5.12 classification of information | done |
 | private identifiers (admin account, host names, key names) checked against a pattern list kept **outside** the repository | listing them in a tracked config would publish exactly what the check protects | `git config hooks.sanitizePatterns <file>`, read by the hook; skipped with a notice when unset | A.5.12 classification of information | done (workstation of the author; other admins set their own list) |
 
 ## Verification
@@ -100,7 +100,7 @@ the restore test, so the numbers describe the state a reinstall produces):
   the rebuilt host on 2026-09-20 as `sudo bash docker-bench-security.sh`
   (**not** `sh`: the script uses bash syntax and under dash seven daemon
   checks are mis-evaluated — 2.9 "user namespace support" showed WARN
-  although `userns-remap` is active; P-019). Score before triage **12/117**,
+  although `userns-remap` is active; [P-019](problems.md#p-019--docker-bench-under-sh-reports-false-warns)). Score before triage **12/117**,
   after the three fixes below **44/117**. The score counts only PASS; every
   remaining WARN is classified here:
 
@@ -109,10 +109,10 @@ the restore test, so the numbers describe the state a reinstall produces):
   | 1.1.3–1.1.18 | no audit rules for Docker files | **fixed** — `auditd` + `/etc/audit/rules.d/docker.rules` via `bootstrap.sh` | Host table |
   | 2.2 | inter-container traffic on the default bridge | **fixed** — `icc: false`; the stacks use only user-defined networks (5.30 PASS), so nothing changes for them | Host table |
   | 2.14 | no daemon-wide `no-new-privileges` | **fixed** — daemon default; already set per container (5.26 PASS) | Host table |
-  | 5.11 | `caddy` without memory limit | **fixed** — `mem_limit: 128m` | `proxy/compose.yaml` |
+  | 5.11 | `caddy` without memory limit | **fixed** — `mem_limit: 128m` | [`proxy/compose.yaml`](../proxy/compose.yaml) |
   | 1.1.1 | no separate partition for `/var/lib/docker` | accepted — single-disk cloud image; a volume is a provisioning choice, not a container one | — |
-  | 4.1, 5.13 | `gitlab`, `xwiki` run as root; `gitlab`, `xwiki`, `openproject`(+worker) with writable root fs | accepted — images require it; compensated by `userns-remap`, `cap_drop`, `no-new-privileges` | ADR-0010, ADR-0012, ADR-0013 |
-  | 5.7 | sshd inside `gitlab` | accepted — Git over SSH on :2222 is the product function; host sshd is separate | ADR-0004 |
+  | 4.1, 5.13 | `gitlab`, `xwiki` run as root; `gitlab`, `xwiki`, `openproject`(+worker) with writable root fs | accepted — images require it; compensated by `userns-remap`, `cap_drop`, `no-new-privileges` | [ADR-0010](adr/0010-gitlab-container.md), [ADR-0012](adr/0012-openproject-container.md), [ADR-0013](adr/0013-xwiki-container.md) |
+  | 5.7 | sshd inside `gitlab` | accepted — Git over SSH on :2222 is the product function; host sshd is separate | [ADR-0004](adr/0004-git-server.md) |
   | 5.8, 5.9, 5.14 | ports 80/443/2222 published on `0.0.0.0` | accepted — single-purpose host behind the provider firewall (port scan above); binding to one address is an extension | Verification (scan) |
   | 4.6, 5.27 | no `HEALTHCHECK` in upstream images; none at runtime for `caddy`, `openproject-worker`, `openproject-cache` | accepted — compose healthchecks exist where an endpoint exists; Caddy's admin API is disabled by design, worker and memcached expose no probe | compose files |
   | 5.12 | no CPU limits | accepted for a single-tenant host; `cpus:` per service is a ten-minute extension | — |
@@ -120,7 +120,7 @@ the restore test, so the numbers describe the state a reinstall produces):
   | 2.12 | no authorization plugin | gap — one admin, no shared daemon; relevant once several people hold `sudo docker` | — |
   | 2.13 | no remote logging | gap — no log receiver in scope; `json-file` with rotation today | — |
   | 2.16 | userland proxy enabled | gap — disabling changes how published ports are wired (iptables only); untested here, hence not flipped on hand-in day | — |
-  | 4.5 | Docker Content Trust off | gap — the upstream images are not signed with DCT; pinned tags are the substitute | ADR-0001 |
+  | 4.5 | Docker Content Trust off | gap — the upstream images are not signed with DCT; pinned tags are the substitute | [ADR-0001](adr/0001-hosting.md) |
 
 ## Known gaps / extension steps (in order of value)
 Deliberately not built within the three-day time-box; each item names why it
@@ -135,7 +135,7 @@ matters, why it was deferred, and where the decision is recorded.
    production use. Target architecture: an OIDC identity provider (Authentik
    or Keycloak) in front of lldap with MFA and forward-auth at the proxy;
    GitLab and XWiki move to OIDC, OpenProject CE stays on LDAP (OIDC is an
-   Enterprise add-on there). — ADR-0011 §3, ADR-0006 "Trust model
+   Enterprise add-on there). — [ADR-0011](adr/0011-lldap-container.md) §3, [ADR-0006](adr/0006-identity.md) "Trust model
    assessment".
 2. **Detection of failed gate attempts**: dedicated Caddy access log for
    `ldap.lab.test` and a runbook line to review 401s; later fail2ban on the
@@ -143,47 +143,47 @@ matters, why it was deferred, and where the decision is recorded.
    (~10 min for the log), deferred behind the three MVP services.
 3. **2FA for LDAP users in GitLab** (currently enforced for administrators
    only): one admin setting; deferred so that test users could be created
-   without TOTP enrolment. — `services/gitlab/README.md`.
+   without TOTP enrolment. — [`services/gitlab/README.md`](../services/gitlab/README.md).
 4. **Data-level XWiki ↔ OpenProject integration** (work-package tables
    rendered inside wiki pages): the only candidate, the `xwiki-contrib`
-   OpenProject macro, has never been released (`docs/integration.md` §3), so
+   OpenProject macro, has never been released ([`docs/integration.md`](integration.md) §3), so
    this stays a gap until a maintained extension exists. Built instead on
    day 3: the GitLab → OpenProject webhook (host allowlist, three-permission
-   user — ADR-0014, P-018) and the documentation hub (GitLab External wiki,
+   user — [ADR-0014](adr/0014-gitlab-openproject-webhook.md), [P-018](problems.md#p-018--webhook-answered-200-on-every-delivery-and-linked-nothing)) and the documentation hub (GitLab External wiki,
    OpenProject `Documentation` attribute, XWiki project pages).
 5. **Minimal capability list for GitLab** (`cap_drop: ALL` + explicit
    `cap_add`) instead of Docker's default set; GitLab documents no minimal
    set, so the list must be derived by trial at 3–5 min per start.
-   — ADR-0010 §2.
+   — [ADR-0010](adr/0010-gitlab-container.md) §2.
 6. **Trust only the proxy's address for `X-Forwarded-For`** (pinned `edge`
    subnet, fixed Caddy address) instead of the Docker pool; closes the
-   forged-header path from a compromised neighbour container. — ADR-0010 §3.
+   forged-header path from a compromised neighbour container. — [ADR-0010](adr/0010-gitlab-container.md) §3.
 7. **Identities as code**: lldap's `bootstrap.sh` with versioned user/group
    definitions replacing the manual UI procedure; reconciles idempotently,
    so it can be introduced without discarding existing entries.
-   — ADR-0011 §4.
+   — [ADR-0011](adr/0011-lldap-container.md) §4.
 8. **Compose `secrets:` (file-based) where images support `_FILE`
    variables** (lldap does): keeps secrets out of `docker inspect`. Deferred
-   so that all stacks use one mechanism today. — ADR-0009, ADR-0011.
+   so that all stacks use one mechanism today. — [ADR-0009](adr/0009-secrets-domain-repo.md), [ADR-0011](adr/0011-lldap-container.md).
 9. **LDAPS between containers**: traffic is plain text on an internal Docker
-   network; LDAPS would add certificate handling in every client. — ADR-0006.
+   network; LDAPS would add certificate handling in every client. — [ADR-0006](adr/0006-identity.md).
 10a. **Headers on Caddy's own error responses**: the `401` of the lldap
     basic-auth gate is written by Caddy's error route and carries none of
     the `hardened` headers (no HSTS, no `X-Frame-Options`, `Server: Caddy`
     visible). Impact is small (empty body), but "no Server header" and
     "HSTS everywhere" are not true for that one response. Fix candidate: a
     `handle_errors` block importing the same header set — needs a test that
-    `WWW-Authenticate` survives it. — P-023.
+    `WWW-Authenticate` survives it. — [P-023](problems.md#p-023--the-lldap-gates-401-carries-none-of-the-proxys-security-headers).
 10. **Content-Security-Policy in GitLab** (off by default, sent as an empty
-    header); application setting, needs testing against the UI. — P-007.
+    header); application setting, needs testing against the UI. — [P-007](problems.md#p-007--security-headers-absent-on-502-responses-closed-2026-09-19).
     **XWiki session IDs in URLs** (`;jsessionid=` on redirects, URL
     rewriting for cookie-less clients): disable in Tomcat's `context.xml`
     (`disableURLRewriting`) so session IDs never land in logs or referrers.
     **XWiki read-only root filesystem**: possible with tmpfs for Tomcat's
-    `work/`, `temp/`, `logs/` — untested. — ADR-0013.
+    `work/`, `temp/`, `logs/` — untested. — [ADR-0013](adr/0013-xwiki-container.md).
     **Offboarding automation for XWiki**: the `LDAP user cleanup` extension
     removes profiles of users deleted from LDAP; only after the offboarding
     policy decides whether profiles are deleted or kept (audit trail).
 11. **Rootless Docker**, **intermediate CA**, **central log collection and
     alerting**: production-grade measures outside the scope of a
-    single-host lab. — ADR-0002, ADR-0007.
+    single-host lab. — [ADR-0002](adr/0002-os-and-docker.md), [ADR-0007](adr/0007-pki.md).

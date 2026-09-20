@@ -16,12 +16,12 @@ hardening, resources).
 /srv/gitlab/logs/                 owner 100000   -> /var/log/gitlab
 /srv/gitlab/data/                 owner 100000   -> /var/opt/gitlab  (repositories, database, uploads)
 ```
-`100000` = container root under `userns-remap` (ADR-0002); Omnibus chowns the
+`100000` = container root under `userns-remap` ([ADR-0002](../../docs/adr/0002-os-and-docker.md)); Omnibus chowns the
 per-service subdirectories to its own users (`git`, `gitlab-psql`, …), which
-land at 100000 + UID on the host. Created by `scripts/bootstrap.sh`.
-`pki/ca.crt` is copied into `trusted-certs/` with that owner (first-start step
+land at 100000 + UID on the host. Created by [`scripts/bootstrap.sh`](../../scripts/bootstrap.sh).
+[`pki/ca.crt`](../../pki/ca.crt) is copied into `trusted-certs/` with that owner (first-start step
 below). It is not bind-mounted: `reconfigure` sets owner and mode on every file
-in that directory, which fails on a mount (`docs/problems.md` P-010).
+in that directory, which fails on a mount ([`docs/problems.md`](../../docs/problems.md) [P-010](../../docs/problems.md#p-010--gitlab-reconfigure-fails-on-a-bind-mounted-ca-certificate)).
 
 Networks `edge` (reached by Caddy) and `ldap` (reaches lldap) exist before the
 stack starts (bootstrap). The only published port is `2222` (Git over SSH);
@@ -62,7 +62,7 @@ with a dedicated key; the SSH host key fingerprint shown on first connect
 matched the one printed in the container's first-start log.
 
 ## Workstation access to Git
-- HTTPS: git must trust the private CA; either import `pki/ca.crt` into the
+- HTTPS: git must trust the private CA; either import [`pki/ca.crt`](../../pki/ca.crt) into the
   system store or pass it per clone:
   `git -c http.sslCAInfo=/path/to/pki/ca.crt clone https://git.lab.test/<ns>/<project>.git`.
   Username is the GitLab user, password is a personal access token with the
@@ -113,7 +113,7 @@ sudo docker logs gitlab 2>&1 | grep -c 'Peer authentication failed'
 ```
 Results on 2026-09-19 (first build): all checks as expected. `docker stats`
 showed 5.97 GiB idle with the auto-detected 8 Puma workers and 2.91 GiB with
-`puma['worker_processes'] = 2` (ADR-0010, decision 7). Because the image tails the log files in the volume, `docker logs`
+`puma['worker_processes'] = 2` ([ADR-0010](../../docs/adr/0010-gitlab-container.md), decision 7). Because the image tails the log files in the volume, `docker logs`
 also replays entries from before a container was recreated.
 
 ## Operations
@@ -126,5 +126,5 @@ also replays entries from before a container was recreated.
   Rails takes 30–60 s to load before it prompts twice for the new password
   (https://docs.gitlab.com/security/reset_user_password/). 2FA stays
   configured; a lost authenticator is covered by the recovery codes.
-- Upgrade: see ADR-0004 (backup → upgrade path tool → change the image tag).
-- Backup: `gitlab-backup create` plus `gitlab-secrets.json`, `gitlab.rb` and the SSH host keys from `/srv/gitlab/config` — none of which the backup tar contains (`docs/backup-restore.md`, P-014). Restore only onto the same image tag.
+- Upgrade: see [ADR-0004](../../docs/adr/0004-git-server.md) (backup → upgrade path tool → change the image tag).
+- Backup: `gitlab-backup create` plus `gitlab-secrets.json`, `gitlab.rb` and the SSH host keys from `/srv/gitlab/config` — none of which the backup tar contains ([`docs/backup-restore.md`](../../docs/backup-restore.md), [P-014](../../docs/problems.md#p-014--gitlab-backup-covers-neither-the-ssh-host-keys-nor-trusted-certs)). Restore only onto the same image tag.

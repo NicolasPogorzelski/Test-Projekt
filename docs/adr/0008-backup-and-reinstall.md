@@ -40,10 +40,10 @@ Task item 3: backups and reinstallation must be as simple as possible.
 | Encryption | `age` before copying off-host (backup contains secrets and password hashes) | none — data leak on the copy path |
 | Scheduling | systemd timer | cron |
 | Reinstall | `bootstrap.sh` + README runbook | Ansible playbook — next step |
-| Proof | restore test on a rebuilt VPS, protocol with duration (RTO) in `docs/backup-restore.md` | — |
+| Proof | restore test on a rebuilt VPS, protocol with duration (RTO) in [`docs/backup-restore.md`](../backup-restore.md) | — |
 
 ## Consequences
-- Bind mounts must carry the remapped ownership (ADR-0002).
+- Bind mounts must carry the remapped ownership ([ADR-0002](0002-os-and-docker.md)).
 - Encryption and the systemd timer are the first items to drop if time runs
   short; the restore test is not negotiable.
 - RPO = backup interval (daily); RTO measured in the test.
@@ -60,12 +60,12 @@ Task item 3: backups and reinstallation must be as simple as possible.
   copy has no disk encryption (checked with `lsblk`: plain btrfs, no `crypt`
   layer), so a plaintext copy there was not acceptable. Sets are encrypted with
   `age` on the host before they leave it; recipient in
-  `scripts/backup-recipients.txt`, identity in the password manager only.
+  [`scripts/backup-recipients.txt`](../../scripts/backup-recipients.txt), identity in the password manager only.
 - **Read access for the off-host pull.** Sets are `root:backup 0640`; the admin
   is added to Debian's `backup` group by `bootstrap.sh` (the group exists for
   delegated backup duties and grants nothing else on a stock system).
 - **GitLab set contents.** `gitlab-secrets.json`, `gitlab.rb` and the SSH host
-  keys are copied next to the `gitlab-backup` archive (P-014).
+  keys are copied next to the `gitlab-backup` archive ([P-014](../problems.md#p-014--gitlab-backup-covers-neither-the-ssh-host-keys-nor-trusted-certs)).
 - **Retention** counts encrypted sets by name (7), never by mtime.
 - **Scheduling — built.** `bootstrap.sh` writes `backup.service` +
   `backup.timer` (daily 03:00 UTC, persistent, 15 min jitter); the unit is

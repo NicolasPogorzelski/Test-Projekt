@@ -17,7 +17,7 @@ workstation.
 | File | Location | Tracked in git | Mode |
 |---|---|---|---|
 | `ca.key` (CA private key, AES-256 encrypted) | workstation `~/lab-pki/` | **never** | 600 |
-| `ca.crt` (CA certificate, public) | workstation `~/lab-pki/`, repo `pki/ca.crt`, host `/srv/proxy/certs/` | yes | 644 |
+| `ca.crt` (CA certificate, public) | workstation `~/lab-pki/`, repo [`pki/ca.crt`](ca.crt), host `/srv/proxy/certs/` | yes | 644 |
 | `ca.srl` (serial counter) | workstation `~/lab-pki/` | no | 644 |
 | `<host>.key` (service private key, unencrypted) | workstation `~/lab-pki/issued/`, host `/srv/proxy/certs/` | never | 600 |
 | `<host>.crt` (service certificate) | workstation `~/lab-pki/issued/`, host `/srv/proxy/certs/` | no | 644 |
@@ -105,7 +105,7 @@ rm -r ~/certs-upload
 ```
 `install` copies and sets mode and owner in one step. The owner of the key
 files is adjusted to the (userns-remapped) UID of the Caddy process when the
-proxy stack is set up — see `proxy/README.md`.
+proxy stack is set up — see [`proxy/README.md`](../proxy/README.md).
 
 ## Renewal runbook (yearly)
 
@@ -122,9 +122,9 @@ proxy stack is set up — see `proxy/README.md`.
 
 - **Fedora / Bazzite system store:** `sudo cp pki/ca.crt /etc/pki/ca-trust/source/anchors/lab-test-ca.crt && sudo update-ca-trust`
 - **Debian/Ubuntu:** `sudo cp pki/ca.crt /usr/local/share/ca-certificates/lab-test-ca.crt && sudo update-ca-certificates`
-- **Flatpak browsers do not read the system store** (see `docs/problems.md`, P-001):
+- **Flatpak browsers do not read the system store** (see [`docs/problems.md`](../docs/problems.md), [P-001](../docs/problems.md#p-001--flatpak-browsers-do-not-use-the-system-ca-trust-store)):
   Firefox → Settings → Privacy & Security → Certificates → View Certificates →
-  Authorities → Import → select `pki/ca.crt` → "Trust this CA to identify websites".
+  Authorities → Import → select [`pki/ca.crt`](ca.crt) → "Trust this CA to identify websites".
   Chrome → Settings → Privacy and security → Security → Manage certificates →
   Authorities → Import.
 - Name resolution: add `<server-ip>  git.lab.test wiki.lab.test pm.lab.test ldap.lab.test`

@@ -5,7 +5,7 @@ Accepted (built and verified 2026-09-20 after the restore test)
 
 ## Context
 Task item 4 asks for the products to be interlinked. Until now the three
-products shared only their identity (lldap, ADR-0006). OpenProject ≥ 13.4
+products shared only their identity (lldap, [ADR-0006](0006-identity.md)). OpenProject ≥ 13.4
 ships a GitLab integration: GitLab *pushes* events (merge requests,
 comments, pipelines) to `https://<openproject>/webhooks/gitlab?key=<token>`,
 and OpenProject shows them on the work packages referenced as `OP#<id>`.
@@ -16,7 +16,7 @@ Two things make this a security decision rather than a click-through:
 
 1. **SSRF guard.** Inside the GitLab container `pm.lab.test` resolves to
    Caddy's address on the Docker network `edge` (an alias in
-   `proxy/compose.yaml`), i.e. a private IP. GitLab blocks webhooks to
+   [`proxy/compose.yaml`](../../proxy/compose.yaml)), i.e. a private IP. GitLab blocks webhooks to
    private and local addresses by default, because a project owner can make
    GitLab call any URL — and on `edge` that includes services that only
    Caddy protects from the outside: the lldap admin UI without its
@@ -29,12 +29,12 @@ Two things make this a security decision rather than a click-through:
   "Local IP addresses and domain names that hooks and integrations can
   access" (Admin Area → Settings → Network → Outbound requests), keep
   DNS-rebinding protection on. The same list later received `wiki.lab.test`
-  for the External wiki integration (`docs/integration.md` §3): GitLab
+  for the External wiki integration ([`docs/integration.md`](../integration.md) §3): GitLab
   validates every integration URL against this policy, not only the ones it
-  calls (P-021). Still two names, still no blanket exception. The webhook
+  calls ([P-021](../problems.md#p-021--gitlab-refuses-the-external-wiki-url-requests-to-the-local-network-are-not-allowed)). Still two names, still no blanket exception. The webhook
   therefore leaves GitLab through
   the same door a browser uses: Caddy, TLS, certificate checked against the
-  lab CA that already sits in `/etc/gitlab/trusted-certs/` (P-010). Every
+  lab CA that already sits in `/etc/gitlab/trusted-certs/` ([P-010](../problems.md#p-010--gitlab-reconfigure-fails-on-a-bind-mounted-ca-certificate)). Every
   other internal address stays blocked.
 - **Identity:** a dedicated local OpenProject user `gitlab-integration`
   (internal password, not LDAP, not an administrator), member of the project
@@ -44,7 +44,7 @@ Two things make this a security decision rather than a click-through:
   `add_work_package_comments`) — the last two because OpenProject links a
   merge request by looking up the referenced work packages **as this user**
   and writing a comment on them; without them the webhook is accepted with
-  `200` and nothing happens (P-018). Its API token is the `key` in the
+  `200` and nothing happens ([P-018](../problems.md#p-018--webhook-answered-200-on-every-delivery-and-linked-nothing)). Its API token is the `key` in the
   webhook URL; it lives in the password manager and, encrypted, in GitLab's
   database.
 - **Events:** push, comments, work items (GitLab 19's name for issue events), merge requests, pipelines; SSL
@@ -64,4 +64,4 @@ Two things make this a security decision rather than a click-through:
   of every backup set; nothing new to add to `backup.sh`.
 - The XWiki → OpenProject macro (the other half of known gap 4) needs an
   OAuth application in OpenProject and stays an extension step.
-- Verification recorded in `docs/integration.md` §2.
+- Verification recorded in [`docs/integration.md`](../integration.md) §2.

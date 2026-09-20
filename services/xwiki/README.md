@@ -9,8 +9,8 @@ in [`docs/architecture.md`](../../docs/architecture.md).
   read-only) and `xwiki` (Tomcat, reached by Caddy as `xwiki:8080`, root
   with all capabilities dropped).
 - `tomcat/server.xml` — Tomcat's stock configuration from the image plus
-  the `RemoteIpValve` (ADR-0013 §3), mounted read-only.
-- `.env` — one hex secret, see `.env.example`. Not in git.
+  the `RemoteIpValve` ([ADR-0013](../../docs/adr/0013-xwiki-container.md) §3), mounted read-only.
+- `.env` — one hex secret, see [`.env.example`](../../.env.example). Not in git.
 
 ## Host prerequisites
 ```
@@ -19,7 +19,7 @@ in [`docs/architecture.md`](../../docs/architecture.md).
 /srv/xwiki/db/              owner 100070 (postgres user 70) -> /var/lib/postgresql/data
 /srv/xwiki/cacerts          root 644, built below           -> JVM trust store (image cacerts + lab.test CA)
 ```
-Directories by `scripts/bootstrap.sh`; networks `edge`/`ldap` exist
+Directories by [`scripts/bootstrap.sh`](../../scripts/bootstrap.sh); networks `edge`/`ldap` exist
 (bootstrap), `xwiki_internal` is created by this stack.
 
 ## First start
@@ -54,7 +54,7 @@ extensions to install (several minutes).
    *Closed* if offered. Verify, logged out:
    `/bin/register/XWiki/XWikiRegister` and `/bin/view/Main/` both redirect
    to the login page.
-2. LDAP (ADR-0013 §5) — three parts, all needed:
+2. LDAP ([ADR-0013](../../docs/adr/0013-xwiki-container.md) §5) — three parts, all needed:
    1. **Two extensions.** Administration → *Extensions*: install **LDAP
       Authenticator** (`org.xwiki.contrib.ldap:ldap-authenticator`, the
       logic) *and* **LDAP Application** (`org.xwiki.contrib.ldap:ldap-ui`,
@@ -105,11 +105,11 @@ sudo docker stats --no-stream --format '{{.Name}} {{.MemUsage}}' xwiki xwiki-db
 - Upgrade: bump the image tag, rebuild `/srv/xwiki/cacerts` (JRE may
   change), `up -d`; XWiki migrates its data on start.
 - Backup: `pg_dump` from `xwiki-db` + `/srv/xwiki/data` + `.env` +
-  `/srv/xwiki/cacerts` (regenerable) — ADR-0008, day 3.
+  `/srv/xwiki/cacerts` (regenerable) — [ADR-0008](../../docs/adr/0008-backup-and-reinstall.md), day 3.
 
 Results on 2026-09-19 (first build): started on the first attempt with
 `cap_drop: ALL` as root; db 70:70 read-only with all capabilities dropped;
 no published port; `keytool -list` shows `lab-test-root-ca` with the CA's
 SHA-256 fingerprint; redirects are `https://`; memory 2.18 GiB after the
 flavor and LDAP extensions (limit raised to 3 GiB), db 63 MiB. LDAP sign-in
-verified with a member and a non-member (`docs/integration.md`, P-012).
+verified with a member and a non-member ([`docs/integration.md`](../../docs/integration.md), [P-012](../../docs/problems.md#p-012--xwiki-ldap-installed-configured-and-still-invalid-credentials)).

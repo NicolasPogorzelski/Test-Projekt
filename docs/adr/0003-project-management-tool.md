@@ -29,7 +29,7 @@ OpenProject Community Edition.
 
 ## Consequences
 - OpenProject's SSO (OIDC/SAML) is unavailable in the Community Edition; this
-  drives ADR-0006 (LDAP instead of SSO).
+  drives [ADR-0006](0006-identity.md) (LDAP instead of SSO).
 - In a company with a budget, Allegra would be a legitimate option: it ships
   LDAP and GitLab integration without an enterprise surcharge, whereas
   OpenProject charges for SSO.
