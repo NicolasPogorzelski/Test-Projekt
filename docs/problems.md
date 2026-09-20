@@ -296,3 +296,33 @@ P-015 shows what that habit costs.
   which is exactly why `bootstrap.sh` runs `sshd -t` and removes the file on
   failure instead of reloading blindly.
 - `git` missing on the cloud image — see P-015 for the day it repeated.
+
+## P-018 — Webhook answered 200 on every delivery and linked nothing
+- **Symptom:** GitLab's webhook test and the real push/merge-request events
+  all showed `HTTP 200`; OpenProject's log confirmed `POST /webhooks/gitlab
+  status=200 user=6` — yet work package #37 showed no merge request, as
+  `alice` and as the administrator.
+- **Verification:** read-only SQL in the OpenProject database:
+  `gitlab_merge_requests` and `gitlab_merge_requests_work_packages` were
+  empty; the integration user existed (id 6, matching the log), was a member
+  of the right project (`members` joined by mail, not by login — the login
+  had been set to the mail address, which made the first membership query
+  return nothing and sent the diagnosis down a wrong path for one round);
+  `role_permissions` for the role listed `show_gitlab_content` and
+  `view_work_packages` but no permission to write a comment. No error in
+  `docker logs openproject` or `openproject-worker`.
+- **Cause:** OpenProject processes the event with the rights of the token's
+  owner: it looks up the `OP#<id>` references among the work packages that
+  user may see, then writes a comment on them. Missing *Add comments*
+  (`add_work_package_comments`) made the write step fail silently; the
+  controller still returns 200 because the delivery itself was valid. The
+  "only GitLab permissions" role from the design brief was therefore too
+  small — and the GitLab section of the role editor in OpenProject 16.6
+  contains only *Show GitLab content*, not the "add and manage" permission
+  the plan had assumed.
+- **Fix:** role `GitLab Integration` = *Show GitLab content* + *View work
+  packages* + *Add comments*; an edit of the MR description re-sent the event
+  and the link appeared. Recorded in ADR-0014. Lessons: a `200` from a
+  webhook receiver means "accepted", not "done" — verify the effect in the
+  data; and when a query returns nothing, check the join key before trusting
+  the absence.
