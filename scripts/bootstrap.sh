@@ -295,7 +295,7 @@ create_networks() {
 
 install_tools() {
     log "tools"
-    ensure_pkgs git rsync              # git: clone via deploy key; rsync: off-host backup copy
+    ensure_pkgs git rsync age          # git: clone via deploy key; rsync: off-host copy; age: backup encryption
 }
 
 delegate_backup_group() {

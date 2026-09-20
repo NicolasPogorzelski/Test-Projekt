@@ -14,6 +14,11 @@ set -euo pipefail
 #   proxy/        certs.tar.gz + config.tar.gz + data.tar.gz
 #   env/          the four .env files
 #   manifest.txt  image tags per stack, repo commit, host   SHA256SUMS  for sha256sum -c
+# The finished directory is packed and encrypted to /srv/backups/<UTC timestamp>.tar.age
+# (age, recipients from scripts/backup-recipients.txt) and the plaintext is removed:
+# the set holds every secret of the installation, so nothing readable stays on disk
+# and the off-host copy can live on an unencrypted workstation. Decrypt on restore:
+#   age -d -i <identity file> <set>.tar.age | tar -x --numeric-owner
 #
 # Consistency rule (ADR-0008, amended 2026-09-20): application containers are
 # stopped while their files are read, database containers keep running and are
@@ -21,13 +26,14 @@ set -euo pipefail
 # gitlab-backup is consistent on its own. An EXIT trap restarts whatever this
 # script stopped, also after a failure. The set is written as <name>.partial and
 # renamed last, so prune and restore.sh never mistake a half-written set for a
-# complete one. The set holds plaintext secrets: root:backup, 0750/0640.
+# complete one. Plaintext exists only while this script runs (root:backup 0750/0640).
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SRV=/srv
 BACKUP_ROOT=$SRV/backups
 KEEP=7                                # sets to keep (ADR-0008)
 BACKUP_GROUP=backup                   # Debian's delegated-backup group; the admin is added by bootstrap.sh
+RECIPIENTS="$REPO/scripts/backup-recipients.txt"   # age public keys, one per line; private keys never touch the host
 STACKS=(proxy lldap gitlab openproject xwiki)
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"    # UTC, sorts lexically, no ':' (rsync/tar friendly)
 SET="$BACKUP_ROOT/$STAMP"
@@ -86,6 +92,8 @@ check_preconditions() {
     [[ $EUID -eq 0 ]] || die "run with sudo"
     [[ -d "$BACKUP_ROOT" ]] || die "$BACKUP_ROOT missing - run bootstrap.sh first"
     getent group "$BACKUP_GROUP" >/dev/null || die "group $BACKUP_GROUP does not exist"
+    command -v age >/dev/null || die "age not installed - run bootstrap.sh"
+    [[ -s "$RECIPIENTS" ]] || die "no age recipients in $RECIPIENTS"
     docker info >/dev/null 2>&1 || die "docker daemon not reachable"
     local s
     for s in gitlab lldap openproject xwiki; do
@@ -159,7 +167,7 @@ write_manifest() {
         printf 'repo_commit: %s\n' "$(git -C "$REPO" -c safe.directory="$REPO" rev-parse HEAD)"
         printf 'gitlab_backup: %s\n' "$GITLAB_TAR"
         for s in "${STACKS[@]}"; do
-            printf 'images[%s]: %s\n' "$s" "$(compose "$s" config --images | sort | tr '\n' ' ')"
+            printf 'images[%s]: %s\n' "$s" "$(compose "$s" config --images | sort -u | tr '\n' ' ')"
         done
     } >"$WORK/manifest.txt"
     # relative paths so that `sha256sum -c SHA256SUMS` works from inside the set
@@ -171,16 +179,28 @@ finalize() {
     chown -R "root:$BACKUP_GROUP" "$WORK"
     chmod -R u=rwX,g=rX,o= "$WORK"     # dirs 750, files 640 (X: execute bit on directories only)
     mv "$WORK" "$SET"                  # rename is atomic: the set is either complete or absent
-    log "set complete: $SET ($(du -sh "$SET" | cut -f1))"
+    log "plaintext set complete: $SET ($(du -sh "$SET" | cut -f1))"
+}
+
+encrypt_set() {
+    log "encrypt: $STAMP.tar.age (recipients: $RECIPIENTS)"
+    # tar keeps the <stamp>/ prefix, so a restore unpacks into a directory of the same name.
+    # pipefail makes a tar error fail the pipeline; .partial keeps prune away until the mv.
+    tar --numeric-owner -C "$BACKUP_ROOT" -cf - "$STAMP" | age -R "$RECIPIENTS" -o "$SET.tar.age.partial"
+    chown "root:$BACKUP_GROUP" "$SET.tar.age.partial"
+    chmod 640 "$SET.tar.age.partial"
+    mv "$SET.tar.age.partial" "$SET.tar.age"
+    rm -rf "$SET"                      # the only readable copy of the secrets - gone once encrypted
+    log "encrypted set: $SET.tar.age ($(du -sh "$SET.tar.age" | cut -f1))"
 }
 
 prune() {
     log "prune: keep the $KEEP newest sets"
     local sets old
-    mapfile -t sets < <(find "$BACKUP_ROOT" -mindepth 1 -maxdepth 1 -type d \
-        -name '[0-9]*T[0-9]*Z' -printf '%f\n' | sort -r)   # by name, never by mtime
+    mapfile -t sets < <(find "$BACKUP_ROOT" -mindepth 1 -maxdepth 1 -type f \
+        -name '[0-9]*T[0-9]*Z.tar.age' -printf '%f\n' | sort -r)   # by name, never by mtime
     for old in "${sets[@]:$KEEP}"; do
-        rm -rf "${BACKUP_ROOT:?}/$old"
+        rm -f "${BACKUP_ROOT:?}/$old"
         log "removed $old"
     done
     # leftovers of earlier failed runs (everything still *.partial is older than this set)
@@ -188,7 +208,7 @@ prune() {
     while IFS= read -r stale; do
         rm -rf "$stale"
         log "removed stale $(basename "$stale")"
-    done < <(find "$BACKUP_ROOT" -mindepth 1 -maxdepth 1 -type d -name '*.partial' ! -newer "$SET")
+    done < <(find "$BACKUP_ROOT" -mindepth 1 -maxdepth 1 -name '*.partial' ! -newer "$SET.tar.age")
 }
 
 check_preconditions
@@ -199,5 +219,6 @@ backup_gitlab
 backup_proxy_and_env
 write_manifest
 finalize
+encrypt_set
 prune
 log "done"
