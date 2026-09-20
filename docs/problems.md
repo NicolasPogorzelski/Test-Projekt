@@ -283,3 +283,16 @@ Chronological. Format: symptom → verification → cause → fix / decision.
   check on a restored host. Lesson: never silence stderr around a helper that
   can exit, and test the "all green" path of a verifier against a container
   without a healthcheck.
+
+## P-017 — Small day-1 slips, bundled
+Recorded late (from the day-1 notes) because they were "too small" at the time;
+P-015 shows what that habit costs.
+- `pki/make-ca.sh` had a syntax error on first run (line 22) — caught by
+  `bash -n` afterwards; since then every script is linted before it is run.
+- `chmod =x` instead of `chmod +x` on a script — `=x` *replaces* the mode with
+  execute-only, so the file became unreadable for its owner; fixed with
+  `chmod 755`.
+- A typo in the sshd drop-in heredoc — noticed by `sshd -t` before the reload,
+  which is exactly why `bootstrap.sh` runs `sshd -t` and removes the file on
+  failure instead of reloading blindly.
+- `git` missing on the cloud image — see P-015 for the day it repeated.

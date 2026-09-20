@@ -7,7 +7,7 @@ hardening, resources).
 ## Files
 - `compose.yaml` — one container; the whole Omnibus configuration is the
   `GITLAB_OMNIBUS_CONFIG` block (evaluated on every start, never written to
-  `gitlab.rb`). No `.env` is needed until the LDAP block is added (phase 6).
+  `gitlab.rb`). The only `.env` value is `GITLAB_LDAP_BIND_PASSWORD` (LDAP block).
 
 ## Host prerequisites
 ```
@@ -127,4 +127,4 @@ also replays entries from before a container was recreated.
   (https://docs.gitlab.com/security/reset_user_password/). 2FA stays
   configured; a lost authenticator is covered by the recovery codes.
 - Upgrade: see ADR-0004 (backup → upgrade path tool → change the image tag).
-- Backup: `gitlab-secrets.json` + the three volumes (ADR-0008, day 3).
+- Backup: `gitlab-backup create` plus `gitlab-secrets.json`, `gitlab.rb` and the SSH host keys from `/srv/gitlab/config` — none of which the backup tar contains (`docs/backup-restore.md`, P-014). Restore only onto the same image tag.

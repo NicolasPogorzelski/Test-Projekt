@@ -34,7 +34,7 @@ The files named in "Where" are what the script writes.
 | `cap_drop: [ALL]`, `security_opt: [no-new-privileges:true]`, `read_only` where possible | limit what a compromised process can do | every `compose.yaml` (exceptions documented) | done: proxy, lldap, both PostgreSQL and memcached with all three; openproject web/worker non-root with `no-new-privileges`; xwiki as root but with `cap_drop: ALL` (image needs root, needs no capability — ADR-0013); gitlab `no-new-privileges` only (Omnibus needs root and user switching, ADR-0010) |
 | Caddy: `user: 1000:1000`, `cap_drop: ALL` + `cap_add: NET_BIND_SERVICE` (the binary's file capability, see P-005), `read_only`, `no-new-privileges`, `admin off`, HTTP/3 off | the only Internet-facing process runs with one capability and a read-only filesystem | `proxy/compose.yaml`, `proxy/Caddyfile` | done |
 | non-root images where available (lldap) | no root inside the container at all | `services/lldap/compose.yaml` (`-rootless` image, `user: 1000:1000`, `cap_drop: ALL`, `read_only`) | done (lldap); Caddy runs non-root too |
-| resource limits (`mem_limit`) | one runaway container cannot starve the host | gitlab 8 GiB (ADR-0010), lldap 256 MB, openproject web 3 GiB / worker 1.5 GiB / db 1 GiB / cache 128 MB (ADR-0012), xwiki 2.5 GiB with a 1.5 GiB JVM heap / db 1 GiB (ADR-0013) | done |
+| resource limits (`mem_limit`) | one runaway container cannot starve the host | gitlab 8 GiB (ADR-0010), lldap 256 MB, openproject web 3 GiB / worker 1.5 GiB / db 1 GiB / cache 128 MB (ADR-0012), xwiki 3 GiB with a 1.5 GiB JVM heap / db 1 GiB (ADR-0013) | done |
 
 ## Transport
 | Measure | Why | Status |

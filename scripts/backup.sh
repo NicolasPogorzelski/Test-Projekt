@@ -102,6 +102,7 @@ check_preconditions() {
     done
     [[ "$(docker inspect -f '{{.State.Health.Status}}' gitlab 2>/dev/null)" == healthy ]] \
         || die "container gitlab is not healthy - gitlab-backup needs a running instance"
+    install -d -m 700 "$WORK"                     # parent first: the systemd umask would give it 755
     install -d -m 750 "$WORK"/{gitlab,openproject,xwiki,lldap,proxy,env}
     log "set: $WORK"
 }

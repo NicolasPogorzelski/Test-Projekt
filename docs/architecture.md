@@ -8,7 +8,7 @@
 | GitLab CE | `gitlab/gitlab-ce:19.4.0-ce.0` | current minor at build time; CE = pure open source (ADR-0004) | source code, CI/CD | 80 (HTTP), 22 (SSH, published as 2222) |
 | XWiki | `xwiki:17.10.13-postgres-tomcat` | **LTS** branch: longer fix support; the branch extensions are typically tested against. Runs as root inside the container with all capabilities dropped (ADR-0013) | documentation | 8080 |
 | OpenProject | `openproject/openproject:16.6.10-slim` + `memcached:1.6.45-alpine` | current 16.6 patch; `-slim` = application only, one container per role, non-root — the all-in-one image is documented as not for production (ADR-0012) | project management | 8080 |
-| lldap | `lldap/lldap:v0.6.3` | current release | LDAP directory + web UI | 3890 (LDAP), 17170 (web) |
+| lldap | `lldap/lldap:v0.6.3-alpine-rootless` | current release | LDAP directory + web UI | 3890 (LDAP), 17170 (web) |
 | PostgreSQL ×2 | `postgres:17.11-alpine` | OpenProject requires PostgreSQL ≥ 16 (system requirements); XWiki's official compose example initialises the DB with the PostgreSQL 17 `builtin` locale provider, which 16 lacks; 17 is maintained until late 2029 | databases for XWiki and OpenProject | 5432 (internal only) |
 
 Tags were taken from the Docker Hub API on 2026-09-18. Every tag is exact
@@ -28,7 +28,7 @@ Internet ──► Hetzner Cloud Firewall (22, 80, 443, 2222) ──► host
                                                               │
    :443 ──► caddy ──┬── git.lab.test  ──► gitlab:80
                     ├── wiki.lab.test ──► xwiki:8080
-                    ├── pm.lab.test   ──► openproject:80
+                    ├── pm.lab.test   ──► openproject:8080
                     └── ldap.lab.test ──► lldap:17170
    :2222 ───────────────────────────────► gitlab:22
 ```
@@ -48,8 +48,8 @@ Internet ──► Hetzner Cloud Firewall (22, 80, 443, 2222) ──► host
 |---|---|---|---|
 | Browser | Caddy | HTTPS | all UIs |
 | Caddy | backends | HTTP (internal network) | proxying; `X-Forwarded-Proto: https` tells backends the client used TLS |
-| GitLab | OpenProject | HTTPS via Caddy | webhooks (MR/commit events) |
-| XWiki | OpenProject | HTTPS via Caddy | OpenProject macro (work package lists) |
+| GitLab | OpenProject | HTTPS via Caddy | webhooks (MR/commit events) — *extension step, not built* (`docs/integration.md` §2) |
+| XWiki | OpenProject | HTTPS via Caddy | OpenProject macro (work package lists) — *extension step, not built* (`docs/integration.md` §3) |
 | GitLab, XWiki, OpenProject | lldap | LDAP (LDAPS planned) | authentication |
 | Git client | GitLab | SSH :2222 | clone/push |
 
