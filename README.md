@@ -100,6 +100,7 @@ Log in as `<admin>` (verify that this works before the next step — the script
 disables root and password logins), then:
 
 ```
+sudo apt-get update && sudo apt-get install -y git   # the cloud image ships without git (P-015)
 git clone <this repository> ~/Test-Projekt          # read-only deploy key, see docs/security.md
 sudo ~/Test-Projekt/scripts/bootstrap.sh
 ```

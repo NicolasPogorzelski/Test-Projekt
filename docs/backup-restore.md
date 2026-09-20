@@ -66,7 +66,7 @@ restarts stopped containers even after a failure):
 8. prune: keep the 7 newest `.tar.age` (sorted by name), remove stale
    `.partial` leftovers
 
-Measured on the reference host (2026-09-20, two runs): 1 min 27–33 s wall
+Measured on the reference host (2026-09-20, three runs): 1 min 27–33 s wall
 clock, 64 MB per set; service interruption per application 1–45 s
 (OpenProject longest because of the seeder).
 
@@ -118,11 +118,21 @@ names to the new address, then the functional checklist below.
 ## Restore test protocol
 | Date | Host state | Steps | Duration (RTO) | Result | Findings |
 |---|---|---|---|---|---|
-| 2026-09-20 | rebuilt VPS (same image and size) | clone → bootstrap → restore | _pending_ | _pending_ | _pending_ |
+| 2026-09-20 | new VPS, same image (Debian 13) and size; the source host kept running for comparison | first root login → admin account → deploy key → `git clone` → `bootstrap.sh` → copy set + identity → `restore.sh` → machine verification | **21 min 08 s** from first root login to all containers healthy and all four hostnames answering over TLS (timestamps from file birth times and the script log); `restore.sh` alone 11 min 06 s | passed — functional checklist below completed afterwards (~15 min, manual) | P-015 (`git` missing on the image, ~1 min), P-016 (verifier bug, no data impact); `gitlab:check` reported Sidekiq "not running" immediately after the restart, `gitlab-ctl status` two minutes later showed it running (start-up order, not a fault) |
 
-Verification checklist after restore (functional — what the script cannot know):
-- [ ] all four hostnames answer over HTTPS with the lab CA certificate (browser, no warning)
-- [ ] LDAP login `alice` works in GitLab, XWiki and OpenProject; `bob` (no group) is refused in all three (group filters, `docs/integration.md`)
-- [ ] the test repository can be cloned via SSH `:2222` without a host-key warning, and via HTTPS
-- [ ] the test wiki page exists
-- [ ] OpenProject: project visible to `alice`, work package `Test` with attachment `Test-restore-openproject.txt` downloadable
+Phase durations of `restore.sh` in that run: lldap 0:35 · proxy 0:04 ·
+OpenProject 2:52 (pg_restore, seeder, healthcheck) · XWiki 1:17 · GitLab first
+start 3:09 · `gitlab-backup restore` 1:02 · GitLab restart + `gitlab:check`
+2:07. GitLab is 57 % of the script time; the rest is dominated by container
+start-up, not by data volume (64 MB set).
+
+Verification checklist after restore (functional — what the script cannot know), result of 2026-09-20:
+- [x] all four hostnames answer over HTTPS with the lab CA certificate (browser, no warning; `curl --cacert pki/ca.crt --resolve` from the workstation: 302/302/302/401, `ssl_verify_result 0`)
+- [x] LDAP login `alice` works in GitLab, XWiki and OpenProject; `bob` (no group) is refused in all three (group filters, `docs/integration.md`)
+- [x] the test repository clones via SSH `:2222` without a host-key warning — the restored host key has the same fingerprint as on the source host (`ssh-keyscan` on both, P-014)
+- [x] the test wiki page exists
+- [x] OpenProject: project visible to `alice`, work package `Test` with attachment `Test-restore-openproject.txt` opens with the original content
+
+Not covered by this test: HTTPS clone with a token (the test token had expired),
+CI artifacts and LFS (none exist), a restore onto a *different* GitLab
+version (the version guard refuses it by design).

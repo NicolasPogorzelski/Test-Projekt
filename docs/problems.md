@@ -247,3 +247,39 @@ Chronological. Format: symptom → verification → cause → fix / decision.
   `trusted-certs/` from the checkout. Lesson: the application's backup tool
   defines what *it* considers state; the reinstall checklist defines what the
   *service* needs — the difference is the backup gap.
+
+## P-015 — The Debian 13 cloud image has no `git`, but the reinstall path starts with `git clone`
+- **Symptom:** on the rebuilt host, the runbook step `git clone … ~/Test-Projekt`
+  failed with `bash: git: command not found`.
+- **Verification:** the Hetzner Debian 13 image ships without `git`;
+  `bootstrap.sh` is the step that installs it (`ensure_pkgs git rsync age`) —
+  but `bootstrap.sh` lives in the repository that has to be cloned first.
+- **Cause:** chicken-and-egg in the runbook order (clone → bootstrap), noticed
+  once on day 1 and never written down, so it repeated on day 3 (the reason
+  this file exists).
+- **Fix:** the runbook installs `git` before the clone
+  (`sudo apt-get update && sudo apt-get install -y git`); `bootstrap.sh` keeps
+  it in `ensure_pkgs` and reports `skip`. Once the repository is public, the
+  alternative is to fetch `bootstrap.sh` alone with `curl` and clone afterwards.
+  The extra minute is included in the measured RTO.
+
+## P-016 — `restore.sh` exited silently in its own verification step
+- **Symptom:** the first restore run completed every stack, GitLab's
+  `gitlab:check` printed its report, then the log ended after
+  `==> verify: containers` with no table, no `done` line and exit code 1; the
+  decrypted plaintext set was left in `/srv/backups/<stamp>/`.
+- **Verification:** `docker ps` on the host showed all nine containers up and
+  every healthcheck green; `curl --cacert pki/ca.crt --resolve` from the
+  workstation returned 302/302/302/401 with `ssl_verify_result 0`. The
+  system was fine; the script was not.
+- **Cause:** two mistakes in one function. `verify()` listed `caddy` among the
+  containers that must report `healthy`, but Caddy has no healthcheck, so
+  `.State.Health.Status` never matches. And `wait_for` ended in `die`, i.e.
+  `exit 1` — an `exit` inside a function is not caught by `|| { … }` — while
+  the call site had `2>/dev/null`, which swallowed the message.
+- **Fix:** `wait_for` returns 1 instead of exiting; restore steps append
+  `|| die`, `verify()` counts and prints every result; Caddy, worker and cache
+  are checked for `running`. Added `restore.sh --verify` to rerun only the
+  check on a restored host. Lesson: never silence stderr around a helper that
+  can exit, and test the "all green" path of a verifier against a container
+  without a healthcheck.
