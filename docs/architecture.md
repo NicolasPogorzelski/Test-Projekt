@@ -48,7 +48,7 @@ Internet ──► Hetzner Cloud Firewall (22, 80, 443, 2222) ──► host
 |---|---|---|---|
 | Browser | Caddy | HTTPS | all UIs |
 | Caddy | backends | HTTP (internal network) | proxying; `X-Forwarded-Proto: https` tells backends the client used TLS |
-| GitLab | OpenProject | HTTPS via Caddy | webhooks (MR/commit events) — *extension step, not built* (`docs/integration.md` §2) |
+| GitLab | OpenProject | HTTPS via Caddy | webhook on push, merge request, comment and pipeline events; GitLab allows outbound requests to `pm.lab.test` only (ADR-0014, `docs/integration.md` §2) |
 | XWiki | OpenProject | HTTPS via Caddy | OpenProject macro (work package lists) — *extension step, not built* (`docs/integration.md` §3) |
 | GitLab, XWiki, OpenProject | lldap | LDAP (LDAPS planned) | authentication |
 | Git client | GitLab | SSH :2222 | clone/push |

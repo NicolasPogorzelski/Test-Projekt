@@ -46,7 +46,7 @@ scripts/         bootstrap.sh (host preparation), backup.sh, restore.sh
    Docker networks — see [`scripts/README.md`](scripts/README.md)).
 3. Copy `.env.example` to `.env` in each stack directory and fill in secrets.
 4. Copy the service certificates to `/srv/proxy/certs/`.
-5. Start the stacks in this order: `proxy`, `lldap`, `gitlab`, `xwiki`, `openproject`.
+5. Start the stacks in this order: `proxy`, `lldap`, `gitlab`, `openproject`, `xwiki`.
 6. Configure LDAP in each service and the integrations (`docs/integration.md`).
 
 ## Evaluating this repository
@@ -168,6 +168,18 @@ compose pull && docker compose up -d`, watch the healthcheck. GitLab: follow
 the upgrade path tool (ADR-0004) and never skip required stops; a set can only
 be restored onto the tag it was taken with (`restore.sh` enforces this).
 PostgreSQL major upgrades: dump-based restore (`docs/backup-restore.md`).
+
+### Project onboarding
+
+For every new project, in this order: create the XWiki page
+`Projects/<name>` (any member can, e.g. as the project lead); create the
+GitLab project — it inherits the *External wiki* link to the XWiki index,
+set the project's own page under *Settings → Integrations → External wiki*
+and disable the built-in wiki under *Settings → General → Visibility*; create
+the OpenProject project — it inherits the module defaults (GitLab on, Wiki
+off), set the `Documentation` attribute on the overview to the XWiki page,
+add the `gitlab-integration` user as member with role `GitLab Integration`
+and register the webhook in the GitLab project (`docs/integration.md` §2, §3).
 
 ### On- and offboarding
 

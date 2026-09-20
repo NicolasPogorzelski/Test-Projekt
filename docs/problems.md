@@ -344,3 +344,73 @@ P-015 shows what that habit costs.
 - **Fix:** run it with `bash`; recorded in the verification section. Lesson:
   a security scanner is a program like any other — read its errors before
   reading its findings.
+
+## P-020 — A stale `initial_root_password` reappears after a restore
+- **Symptom:** the final audit of the rebuilt host found
+  `/srv/gitlab/config/initial_root_password` (600, container root), although
+  the source host had deleted its copy before the first backup and the file
+  is not part of any set.
+- **Verification:** file timestamp = the first GitLab start on the rebuilt
+  host (09:24 UTC), i.e. before `gitlab-backup restore` ran (09:27–09:28); the
+  restored database carries the original root password, so the string in
+  the file does not open anything.
+- **Cause:** `restore.sh` has to start GitLab once on an empty database
+  before it can restore into it (the restore tool runs inside the container);
+  that first start seeds a root password and writes the file, and the
+  restore does not know about it.
+- **Fix:** `restore.sh` removes the file after the restore; runbook note in
+  `docs/backup-restore.md`. Not exercised by a full restore run since the
+  change — the added line is an idempotent `rm -f`. Lesson: every "first
+  start" side effect of a product is a candidate for stale state after a
+  restore; walk the config volume after the test, not just the checklist.
+
+## P-021 — GitLab refuses the External wiki URL: "Requests to the local network are not allowed"
+- **Symptom:** saving the External wiki integration with
+  `https://wiki.lab.test/bin/view/Projects/` failed with the message above,
+  although GitLab never calls that URL — it only renders it as a link.
+- **Verification:** the same message GitLab shows for a webhook to a private
+  address; inside the GitLab container `wiki.lab.test` resolves to Caddy's
+  address on the Docker network (the alias in `proxy/compose.yaml`); after
+  adding `wiki.lab.test` to Admin Area → Settings → Network → Outbound
+  requests → allowlist, the save succeeded.
+- **Cause:** GitLab's URL validator applies the outbound-request policy to
+  *every* integration URL, independent of whether the integration makes
+  requests; the assumption in ADR-0014's first draft ("a plain link needs no
+  exception") was wrong.
+- **Fix:** allowlist entry per name (`pm.lab.test`, `wiki.lab.test`); the
+  blanket "allow local network" switch stays off. ADR-0014 amended.
+
+## P-022 — The second seeded OpenProject project kept the wiki module
+- **Symptom:** the database check for the documentation hub listed
+  `your-scrum-project | wiki` although the docs stated the wiki module was
+  disabled (ADR-0003).
+- **Verification:** `enabled_modules` join `projects` where `name='wiki'`
+  returned one row for the project the seeder creates next to
+  `demo-project`; the day-2 step had been done in `demo-project` only.
+- **Cause:** modules are a per-project setting and the instance default
+  ("Default enabled modules for new projects") still contained Wiki, so both
+  seeded projects and any new one started with it.
+- **Fix:** instance default without Wiki (and with GitLab), wiki disabled in
+  `your-scrum-project`, new projects private by default; verified: zero
+  projects with the module, `default_projects_public = 0`. Lesson: "disabled"
+  claims about per-project settings need a query over all projects, not a
+  look at one.
+
+## P-023 — The lldap gate's 401 carries none of the proxy's security headers
+- **Symptom:** while verifying the new `X-Frame-Options` default, the `401`
+  from `https://ldap.lab.test/` (basic-auth gate) showed only
+  `server: Caddy`, `www-authenticate` and `content-length` — no HSTS, no
+  `X-Frame-Options`, and the `Server` banner that `-Server` should remove.
+- **Verification:** `curl -sk -D - https://ldap.lab.test/` from the
+  workstation; all other hosts carry the header set on 200 and 302. With
+  valid gate credentials (`curl -u <gate user> -D - https://ldap.lab.test/`)
+  the lldap page answers `200` **with** HSTS and `X-Frame-Options` and
+  without a `Server` header — so only the error response is affected.
+- **Cause:** `basic_auth` rejects with a Caddy error, and errors are written
+  by Caddy's error handling route, which does not run the site's `header`
+  directive.
+- **Fix:** not applied on hand-in day — candidate is a `handle_errors` block
+  in the `ldap.lab.test` site importing the same headers; it needs a test
+  that the `WWW-Authenticate` challenge survives. Recorded as known gap 10a.
+  Lesson: a header policy must be measured on error responses too, not only
+  on the happy path.

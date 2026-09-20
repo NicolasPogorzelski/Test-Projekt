@@ -97,17 +97,52 @@ OpenProject as `POST /webhooks/gitlab … status=200 user=<integration user>`
 every delivery returned 200 — see P-018 for the permission the role was
 missing and how the database showed it.
 
-## 3. XWiki ↔ OpenProject
-`xwiki-contrib/openproject` (LGPL) macro: work package lists/tables in wiki
-pages, connected via an OAuth application registered in OpenProject
-(Administration → Authentication → OAuth applications).
-**Not built** within the time-box, same reasoning as §2; the macro would
-additionally need the private CA in XWiki's JVM trust store, which is already
-in place (`/srv/xwiki/cacerts`, ADR-0013). — `docs/security.md`, "Known gaps",
-item 4.
+## 3. XWiki ↔ OpenProject and GitLab — the documentation hub
+**Planned:** the `xwiki-contrib/openproject` macro (work-package tables in
+wiki pages via an OAuth application in OpenProject).
+**Assessed on 2026-09-20 and not viable:** the extension exists only as
+source (`org.xwiki.contrib.openproject:application-openproject-ui`,
+`0.1-SNAPSHOT`, parent platform 13.10, last commit 2024-01, no tags); the
+XWiki Maven repository holds neither a release nor a snapshot artifact, and
+the README's documentation link is a placeholder. Installing it would mean
+building an unreleased XAR against XWiki 17 — not a supportable dependency.
+Alternatives checked: embedding OpenProject views in wiki pages is blocked by
+OpenProject's own `X-Frame-Options: SAMEORIGIN` (correctly, not weakened); a
+script macro calling the OpenProject API would put an API token into wiki
+content and need programming rights (rejected).
 
-## 4. Links that tie the tools together
-- Project template in OpenProject linking to the XWiki space and the GitLab
-  group.
-- OpenProject's built-in wiki module disabled in favour of XWiki (single
-  source for documentation).
+**Built instead — XWiki as the documentation hub of every project**, with
+features the products ship:
+
+| Direction | Mechanism | Where |
+|---|---|---|
+| GitLab → XWiki | *External wiki* integration: the project's "Wiki" menu entry opens the XWiki project page; the built-in wiki is disabled so there is one place for documentation (ADR-0003, now enforced in the UI) | instance default → `https://wiki.lab.test/bin/view/Projects/` (inherited by every project, verified with a freshly created project `inherit-test`); project `smoke-test` overrides with its own page |
+| OpenProject → XWiki | project attribute `Documentation` (type Link, regex `^https://wiki\.lab\.test/`, visible to all members, searchable) shown on the project overview | attribute defined once in Administration → Projects → Project attributes; value per project |
+| XWiki → GitLab, OpenProject | the project page `Projects/<name>` links repository, work-package list and reference work package; `Projects` is the index | created by `alice` (proves members can create, move, rename and delete their pages) |
+| GitLab → OpenProject | webhook (§2) | — |
+
+GitLab's URL validator applies the outbound-request policy to integration
+URLs as well, not only to calls: saving the External wiki URL failed with
+"Requests to the local network are not allowed" until `wiki.lab.test` was
+added next to `pm.lab.test` in the allowlist (ADR-0014, P-021). The global
+"allow local network" switch stays off.
+
+OpenProject defaults adjusted at the same time (Administration → Projects →
+New project): new projects private, default modules without *Wiki* and with
+*GitLab*; the second seeded project (`your-scrum-project`) still had the
+wiki module on — disabled (P-022). Verified in the database: no project with
+module `wiki`, `default_projects_public = 0`, module list contains `gitlab`.
+
+Verification 2026-09-20, as `alice`: every link of the circle lands — XWiki
+page → GitLab project, → OpenProject work-package list, → work package #37
+(with the merged MR on its GitLab tab); GitLab *External wiki* → XWiki page;
+OpenProject *Documentation* → XWiki page.
+
+## 4. What ties the tools together — summary
+| Layer | State |
+|---|---|
+| identity | one directory, per-product access groups, read-only bind users (§1) |
+| events | GitLab → OpenProject webhook: merge requests, comments, pipelines on work packages (§2) |
+| navigation | XWiki project pages as the documentation hub, linked from GitLab (External wiki) and OpenProject (`Documentation` attribute), linking back (§3) |
+| conventions | one project name across the tools (the test data violates it: `smoke-test` vs `demo-project` — a lesson for day one), `OP#<id>` in merge requests, wiki module off in OpenProject and GitLab |
+| not built | data-level rendering of work packages inside wiki pages (no released extension), LDAPS, single sign-on across the products (each still shows its own login form) |
