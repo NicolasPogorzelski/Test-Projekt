@@ -5,6 +5,7 @@ set -euo pipefail
 # Restore one backup set produced by backup.sh onto a freshly bootstrapped host.
 # Usage: sudo ./scripts/restore.sh /srv/backups/<stamp>.tar.age <age identity file>
 #        sudo ./scripts/restore.sh /srv/backups/<stamp>              (already decrypted set)
+#        sudo ./scripts/restore.sh --verify                          (only the final check)
 #
 # Preconditions (README runbook): admin account, repo cloned at the commit the set
 # was taken from (or a compatible one), bootstrap.sh has run (packages, userns,
@@ -43,7 +44,7 @@ compose() {
     docker compose -f "$dir/compose.yaml" "$@"
 }
 
-# wait_for <container> <healthy|running> <timeout seconds>
+# wait_for <container> <healthy|running> <timeout seconds>   returns 1 on timeout, never exits
 wait_for() {
     local c="$1" want="$2" left="$3" state=""
     while ((left > 0)); do
@@ -56,7 +57,8 @@ wait_for() {
         sleep 5
         left=$((left - 5))
     done
-    die "$c did not become $want in time (last state: ${state:-none})"
+    printf '%s did not become %s in time (last state: %s)\n' "$c" "$want" "${state:-none}" >&2
+    return 1
 }
 
 # untar <archive> <parent dir>   archives carry their top-level dir (archive() in backup.sh)
@@ -66,7 +68,7 @@ untar() {
 
 # pg_restore_into <db container> <role=db> <dump>
 pg_restore_into() {
-    wait_for "$1" healthy 90
+    wait_for "$1" healthy 90 || die "database container $1 not ready"
     # --no-owner: objects belong to the connecting role (the dump names the same one, but
     # this keeps the restore independent of it); -1: one transaction, no half-restored state
     docker exec -i "$1" pg_restore -U "$2" -d "$2" --no-owner -1 <"$3"
@@ -158,13 +160,13 @@ restore_lldap() {
     log "lldap: unpack, start"
     untar "$SET/lldap/data.tar.gz" "$SRV"
     compose lldap up -d
-    wait_for lldap healthy 60
+    wait_for lldap healthy 60 || die "lldap did not start"
 }
 
 restore_proxy() {
     log "proxy: start"
     compose proxy up -d
-    wait_for caddy running 30
+    wait_for caddy running 30 || die "caddy did not start"
 }
 
 restore_openproject() {
@@ -173,7 +175,7 @@ restore_openproject() {
     pg_restore_into openproject-db openproject "$SET/openproject/db.dump"
     untar "$SET/openproject/assets.tar.gz" "$SRV/openproject"
     compose openproject up -d                 # seeder runs again (idempotent), then web + worker
-    wait_for openproject healthy 300
+    wait_for openproject healthy 300 || die "openproject did not become healthy"
 }
 
 restore_xwiki() {
@@ -182,7 +184,7 @@ restore_xwiki() {
     pg_restore_into xwiki-db xwiki "$SET/xwiki/db.dump"
     untar "$SET/xwiki/data.tar.gz" "$SRV/xwiki"
     compose xwiki up -d
-    wait_for xwiki healthy 300
+    wait_for xwiki healthy 300 || die "xwiki did not become healthy"
 }
 
 restore_gitlab() {
@@ -197,7 +199,7 @@ restore_gitlab() {
     install -d -m 700 -o "$REMAP_BASE" -g "$REMAP_BASE" "$SRV/gitlab/data/backups"
     install -m 600 -o "$REMAP_BASE" -g "$REMAP_BASE" "$SET/gitlab/$tar_name" "$SRV/gitlab/data/backups/$tar_name"
     compose gitlab up -d
-    wait_for gitlab healthy 600
+    wait_for gitlab healthy 600 || die "gitlab did not become healthy after first start"
     log "gitlab: gitlab-backup restore BACKUP=$backup_id (docs: stop puma + sidekiq first)"
     docker exec gitlab chown git:git "/var/opt/gitlab/backups/$tar_name"   # restore runs as git
     docker exec gitlab gitlab-ctl stop puma
@@ -205,18 +207,21 @@ restore_gitlab() {
     docker exec -e GITLAB_ASSUME_YES=1 gitlab gitlab-backup restore "BACKUP=$backup_id"
     log "gitlab: restart and self-check"
     compose gitlab restart
-    wait_for gitlab healthy 600
+    wait_for gitlab healthy 600 || die "gitlab did not become healthy after restore"
     docker exec gitlab gitlab-rake gitlab:check SANITIZE=true || warn "gitlab:check reported problems - read the output above"
 }
 
 verify() {
     log "verify: containers"
     local c code fails=0 h
-    for c in lldap caddy gitlab openproject openproject-db xwiki xwiki-db; do
-        wait_for "$c" healthy 60 2>/dev/null || { warn "$c not healthy"; fails=$((fails + 1)); }
+    # containers with a healthcheck must report healthy; caddy, worker and cache have none
+    for c in lldap gitlab openproject openproject-db xwiki xwiki-db; do
+        if wait_for "$c" healthy 60; then printf '    %-18s healthy\n' "$c"
+        else warn "$c not healthy"; fails=$((fails + 1)); fi
     done
-    for c in openproject-worker openproject-cache; do
-        wait_for "$c" running 30 2>/dev/null || { warn "$c not running"; fails=$((fails + 1)); }
+    for c in caddy openproject-worker openproject-cache; do
+        if wait_for "$c" running 30; then printf '    %-18s running\n' "$c"
+        else warn "$c not running"; fails=$((fails + 1)); fi
     done
     log "verify: TLS endpoints through Caddy (expect 302, ldap 401)"
     for h in "${HOSTS[@]}"; do
@@ -235,6 +240,13 @@ cleanup_set() {
         log "removed decrypted set $SET"
     fi
 }
+
+if [[ "${1:-}" == --verify ]]; then
+    [[ $EUID -eq 0 ]] || die "run with sudo"
+    verify
+    log "verification passed"
+    exit 0
+fi
 
 check_preconditions "$@"
 resolve_set "$@"
