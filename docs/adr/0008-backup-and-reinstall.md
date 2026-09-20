@@ -47,3 +47,25 @@ Task item 3: backups and reinstallation must be as simple as possible.
 - Encryption and the systemd timer are the first items to drop if time runs
   short; the restore test is not negotiable.
 - RPO = backup interval (daily); RTO measured in the test.
+
+## Amendment 2026-09-20 (implementation)
+- **Services during backup — corrected.** "Stopped" was too coarse: `pg_dump`
+  and `gitlab-backup` need running processes. Rule as implemented: application
+  containers are stopped while their files are read (OpenProject `web`/`worker`,
+  `xwiki`, `lldap`), database containers keep running and are dumped
+  (`pg_dump -Fc`, one MVCC snapshot), GitLab is never stopped
+  (`gitlab-backup create STRATEGY=copy` is consistent on its own), Caddy keeps
+  running. An `EXIT` trap restarts whatever was stopped.
+- **Encryption — built, not deferred.** The workstation that holds the off-host
+  copy has no disk encryption (checked with `lsblk`: plain btrfs, no `crypt`
+  layer), so a plaintext copy there was not acceptable. Sets are encrypted with
+  `age` on the host before they leave it; recipient in
+  `scripts/backup-recipients.txt`, identity in the password manager only.
+- **Read access for the off-host pull.** Sets are `root:backup 0640`; the admin
+  is added to Debian's `backup` group by `bootstrap.sh` (the group exists for
+  delegated backup duties and grants nothing else on a stock system).
+- **GitLab set contents.** `gitlab-secrets.json`, `gitlab.rb` and the SSH host
+  keys are copied next to the `gitlab-backup` archive (P-014).
+- **Retention** counts encrypted sets by name (7), never by mtime.
+- Still deferred: systemd timer (runbook task until then), restic/borg,
+  off-site storage.

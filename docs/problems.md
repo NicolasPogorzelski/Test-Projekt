@@ -210,3 +210,40 @@ Chronological. Format: symptom → verification → cause → fix / decision.
   document` on the first LDAP sign-in is the 9.x authenticator touching a
   cached document in a way XWiki 17 flags but tolerates. Lesson: "extension
   installed" is not "extension active" — the log said so before the UI did.
+
+## P-013 — `docker compose start` re-runs the OpenProject seeder on every backup
+- **Symptom:** the first `backup.sh` run showed `openproject-seeder Starting …
+  Exited` between stopping and starting `web`/`worker`; the OpenProject block
+  took 45 of the 92 s total, although dump and tar finish in about one second.
+- **Verification:** `backup.sh` log timestamps (08:19:31 → 08:20:16) and the
+  compose progress lines; `docker compose start --help` shows no `--no-deps`.
+- **Cause:** `web` and `worker` declare `depends_on: seeder` with
+  `condition: service_completed_successfully`. `compose start` honours
+  `depends_on` like `up` does, so the one-shot seeder container is started
+  again and the applications wait for it to exit.
+- **Fix:** accepted. The seeder is idempotent (that is how OpenProject's
+  official compose file uses it on every start), the cost is ~45 s of
+  application downtime per backup, and the alternative — `up -d --no-deps
+  web worker` — may recreate containers, which a backup script should not do.
+  Recorded here and in `docs/backup-restore.md`.
+
+## P-014 — `gitlab-backup` covers neither the SSH host keys nor `trusted-certs/`
+- **Symptom:** while writing `restore.sh`, the README's "Host prerequisites"
+  for GitLab listed two things the backup set did not contain:
+  `/srv/gitlab/config/ssh_host_*` and `/srv/gitlab/config/trusted-certs/ca.crt`.
+- **Verification:** `ls /srv/gitlab/config/` on the reference host shows the
+  host keys next to `gitlab-secrets.json`; GitLab's backup documentation
+  ("Storing configuration files") names only `gitlab.rb` and
+  `gitlab-secrets.json` as the files to keep separately, and the first set
+  written by `backup.sh` contained exactly those.
+- **Cause:** Omnibus keeps the sshd host keys in `/etc/gitlab` (the config
+  volume), outside everything `gitlab-backup create` archives. A rebuilt host
+  would generate new keys and every clone over `:2222` would fail with
+  "REMOTE HOST IDENTIFICATION HAS CHANGED". `trusted-certs/ca.crt` is a copy of
+  the repository's `pki/ca.crt`, placed by hand at first start (P-010).
+- **Fix:** `backup.sh` adds `gitlab/ssh-host-keys.tar.gz` (numeric owners,
+  inside the encrypted set); `restore.sh` unpacks it into
+  `/srv/gitlab/config/` before the first start and installs `pki/ca.crt` into
+  `trusted-certs/` from the checkout. Lesson: the application's backup tool
+  defines what *it* considers state; the reinstall checklist defines what the
+  *service* needs — the difference is the backup gap.

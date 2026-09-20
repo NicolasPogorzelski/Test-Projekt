@@ -3,8 +3,9 @@
 | Script | Runs on | Purpose |
 |---|---|---|
 | `bootstrap.sh` | host, as root via `sudo` | host baseline: sshd, unattended-upgrades, Docker CE, userns-remap, sudoers, `/srv`, networks |
-| `backup.sh` | host | _TBD (day 3)_ |
-| `restore.sh` | host | _TBD (day 3)_ |
+| `backup.sh` | host, as root via `sudo` | one application-consistent, `age`-encrypted backup set of all stacks under `/srv/backups/`; keeps 7 (`docs/backup-restore.md`) |
+| `restore.sh` | host, as root via `sudo` | restores one set onto a freshly bootstrapped host, with checksum, version and empty-target guards, ends with a TLS/health check |
+| `backup-recipients.txt` | — | `age` public key(s) `backup.sh` encrypts for; the private identity is never on the host |
 | `git-hooks/pre-commit` | workstation | gitleaks on the staged changes + private-identifier check; activate with `git config core.hooksPath scripts/git-hooks` (README, "Workstation setup") |
 
 ## bootstrap.sh
