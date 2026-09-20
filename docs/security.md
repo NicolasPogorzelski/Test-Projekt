@@ -132,7 +132,11 @@ matters, why it was deferred, and where the decision is recorded.
    today an independent `basic_auth` gate stands in front of it. Deferred:
    a further service with its own secrets and session logic (2–3 h) whose
    failure modes would have put the restore test at risk. Required before
-   production use. — ADR-0011 §3.
+   production use. Target architecture: an OIDC identity provider (Authentik
+   or Keycloak) in front of lldap with MFA and forward-auth at the proxy;
+   GitLab and XWiki move to OIDC, OpenProject CE stays on LDAP (OIDC is an
+   Enterprise add-on there). — ADR-0011 §3, ADR-0006 "Trust model
+   assessment".
 2. **Detection of failed gate attempts**: dedicated Caddy access log for
    `ldap.lab.test` and a runbook line to review 401s; later fail2ban on the
    host reading that log (Caddy has no built-in rate limiting). Cheap
