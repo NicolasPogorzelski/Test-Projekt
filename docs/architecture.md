@@ -53,6 +53,35 @@ Internet ──► Hetzner Cloud Firewall (22, 80, 443, 2222) ──► host
 | GitLab, XWiki, OpenProject | lldap | LDAP (LDAPS planned) | authentication |
 | Git client | GitLab | SSH :2222 | clone/push |
 
+## Host requirements
+
+What any host must provide before the stacks, `backup.sh` and `restore.sh`
+work. `scripts/bootstrap.sh` is the tested implementation of this list for
+Debian 13; everything below it is what a port to another distribution has to
+reproduce.
+
+| Requirement | Value | Why |
+|---|---|---|
+| Docker Engine + Compose plugin | Docker CE 29.x, Compose v5 | pinned and tested; the compose files use current syntax |
+| `userns-remap` | user `dockremap`, subordinate range `100000:65536` in `/etc/subuid` and `/etc/subgid`, set **before the first image pull** | container root is unprivileged on the host (ADR-0002); the fixed range makes every bind-mount owner reproducible across rebuilds (P-008, P-009) |
+| `/srv` layout | directories and owners exactly as in `create_srv_layout` (`bootstrap.sh`) — 0, 100000, 101000, 100070 | the containers' users, offset by the remap base; a wrong owner is a service that cannot start or a restore that cannot be read |
+| Docker networks | `edge` (bridge), `ldap` (bridge, `--internal`) | the proxy publishes on `edge`; LDAP traffic never leaves `ldap` |
+| Packages | `git`, `rsync`, `age`, `curl`, `openssl` | clone, off-host copy, set encryption, health checks, PKI |
+| Group `backup` with the admin as member | Debian's GID 34; create it where it does not exist | encrypted sets are `root:backup 0640` for the off-host pull without root |
+| Free ports | 22 (host sshd), 80, 443, 2222 | the only listeners; everything else stays internal |
+| systemd | for `backup.timer` (optional: run `backup.sh` by hand instead) | nightly sets |
+| Memory / disk | 16 GB RAM, ≥ 40 GB disk | GitLab alone is limited to 8 GiB |
+
+Not required by the stacks but part of the baseline on the reference host:
+sshd hardening, unattended upgrades, the read-only sudoers rule
+(`docs/security.md`, "Host").
+
+**Out of scope:** Docker Desktop on macOS or Windows — the engine runs in a
+VM whose file sharing rewrites bind-mount ownership and where
+`userns-remap` does not apply; a demo profile with named volumes and without
+the remap layer would be a separate deployment target, not a port of this
+one. A Debian 13 VM on those systems runs the repository unchanged.
+
 ## Threat model (scope and assumptions)
 
 - **Assets:** source code, wiki content, project data, user credentials, the
