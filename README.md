@@ -33,36 +33,75 @@ recorded with root cause and fix ([problems](docs/problems.md)).
 
 ## At a glance
 
+Request path and identity — everything enters through the proxy, except Git
+over SSH, which GitLab publishes itself:
+
 ```mermaid
 flowchart LR
-  B([Browser]) -->|"HTTPS :443 (:80 redirects)"| C
-  D([git client]) -->|"SSH :2222, published by GitLab"| G
+  B(["Browser, git over HTTPS"]) -->|"HTTPS :443 (:80 redirects)"| C
+  D([git client]) -->|"SSH :2222"| G
   subgraph host["one Debian 13 host — Docker with userns-remap"]
     C["Caddy<br/>TLS with private CA<br/>security-header baseline"]
     G["GitLab CE"]
     W["XWiki"]
     P["OpenProject"]
     L["lldap<br/>directory"]
-    S[("/srv/backups<br/>age-encrypted sets<br/>nightly timer")]
     C -->|"git.lab.test"| G
     C -->|"wiki.lab.test"| W
     C -->|"pm.lab.test"| P
     C -->|"ldap.lab.test<br/>basic-auth gate"| L
-    G -.->|"LDAP"| L
-    W -.->|"LDAP"| L
-    P -.->|"LDAP"| L
-    G ==>|"webhook: MR, pipeline, comment"| P
-    G -.->|"External wiki (link)"| W
-    P -.->|"Documentation attribute (link)"| W
-    G & W & P & L -->|"backup.sh"| S
+    G -.->|"authenticates users via LDAP"| L
+    W -.->|"authenticates users via LDAP"| L
+    P -.->|"authenticates users via LDAP"| L
   end
-  S -->|"rsync pull over SSH"| WS([workstation])
 ```
 
-Solid arrows: requests and data. Dotted: shared identity (LDAP) and the
-documentation links opened in the user's browser. Double: the GitLab →
-OpenProject webhook. Details: [`docs/architecture.md`](docs/architecture.md),
-[`docs/integration.md`](docs/integration.md).
+Dotted: the applications query the one directory on every sign-in — they are
+LDAP clients, nothing is pushed into them (`docs/architecture.md`,
+`docs/integration.md` §1).
+
+<details>
+<summary><strong>Integrations</strong> — how the products are tied together (<code>docs/integration.md</code>)</summary>
+
+```mermaid
+flowchart LR
+  G["GitLab<br/>project smoke-test"]
+  P["OpenProject<br/>work package #37"]
+  W["XWiki<br/>page Projects/smoke-test"]
+  L["lldap"]
+  G ==>|"webhook: push, MR, comment, work item, pipeline<br/>token of a 3-permission user<br/>outbound allowlist by name (pm, wiki)"| P
+  G -.->|"External wiki (menu link)"| W
+  P -.->|"Documentation attribute (link)"| W
+  W -.->|"links: repository, work packages"| G & P
+  G & P & W ---|"LDAP, access groups git_user / pm_user / wiki_user"| L
+```
+
+Double: the only call from one product to another. Dotted: links opened in
+the user's browser. Not built: rendering work packages inside wiki pages (the only
+candidate extension has never been released).
+
+</details>
+
+<details>
+<summary><strong>Backup and restore</strong> — one command each, measured (<code>docs/backup-restore.md</code>)</summary>
+
+```mermaid
+flowchart LR
+  subgraph host["host"]
+    A["applications<br/>stopped while read"]
+    DB["databases<br/>pg_dump while running"]
+    GL["GitLab<br/>gitlab-backup + secrets + host keys"]
+    F["certificates, .env,<br/>lldap, proxy state"]
+    BS["backup.sh<br/>nightly timer"]
+    SET[("/srv/backups/&lt;stamp&gt;.tar.age<br/>manifest + SHA256SUMS<br/>age-encrypted, 7 kept")]
+    A & DB & GL & F --> BS --> SET
+  end
+  SET -->|"rsync pull over SSH"| WS(["workstation<br/>age identity in the password manager"])
+  WS -->|"set + identity"| NEW["fresh host<br/>clone → bootstrap.sh → restore.sh"]
+  NEW -->|"guards: checksums, image tags, empty targets<br/>lldap → proxy → OpenProject → XWiki → GitLab"| OK(["running system, verified<br/>health + TLS by the script, functional checklist by hand<br/>21 min measured"])
+```
+
+</details>
 
 ## Contents
 
