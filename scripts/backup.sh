@@ -6,8 +6,9 @@ set -euo pipefail
 # Usage: sudo ./scripts/backup.sh       (from the admin account, like bootstrap.sh)
 #
 # Set layout under /srv/backups/<UTC timestamp>/ (docs/backup-restore.md, ADR-0008):
-#   gitlab/       <ts>_gitlab_backup.tar + gitlab-secrets.json + gitlab.rb
-#                 (the tar does NOT contain the secrets - GitLab docs, "Storing configuration files")
+#   gitlab/       <ts>_gitlab_backup.tar + gitlab-secrets.json + gitlab.rb + ssh-host-keys.tar.gz
+#                 (gitlab-backup covers none of the three - GitLab docs, "Storing configuration files";
+#                 without the host keys every git@ client warns after a rebuild)
 #   openproject/  db.dump (pg_dump -Fc) + assets.tar.gz
 #   xwiki/        db.dump + data.tar.gz + cacerts
 #   lldap/        data.tar.gz (SQLite users.db + lldap_config.toml)
@@ -143,6 +144,8 @@ backup_gitlab() {
     GITLAB_TAR="$(basename "$gl_tar")"
     install -m 600 "$SRV/gitlab/config/gitlab-secrets.json" "$WORK/gitlab/gitlab-secrets.json"
     install -m 600 "$SRV/gitlab/config/gitlab.rb" "$WORK/gitlab/gitlab.rb"
+    # subshell: the glob must expand inside config/, tar does not glob member names itself
+    (cd "$SRV/gitlab/config" && tar --numeric-owner -czf "$WORK/gitlab/ssh-host-keys.tar.gz" ssh_host_*)
 }
 
 backup_proxy_and_env() {
