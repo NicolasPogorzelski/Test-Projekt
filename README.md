@@ -1,5 +1,9 @@
 # Test-Projekt — Docker-based team work environment
 
+[![Lint](https://github.com/NicolasPogorzelski/Test-Projekt/actions/workflows/lint.yml/badge.svg?branch=main)](https://github.com/NicolasPogorzelski/Test-Projekt/actions/workflows/lint.yml)
+[![Secret scan](https://github.com/NicolasPogorzelski/Test-Projekt/actions/workflows/secret-scan.yml/badge.svg?branch=main)](https://github.com/NicolasPogorzelski/Test-Projekt/actions/workflows/secret-scan.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 A self-hosted work environment for a small team, deployed with Docker Compose on a
 single Debian 13 host:
 
@@ -15,8 +19,57 @@ All services are served over HTTPS with certificates issued by a private CA, sha
 one LDAP directory for user accounts, and can be backed up and reinstalled with the
 scripts in `scripts/`.
 
-This repository was built as a practical assessment task. Every design decision is
-recorded as an Architecture Decision Record in [`docs/adr/`](docs/adr/).
+This repository was built as a practical assessment task in three days. Every
+design decision is recorded as an Architecture Decision Record in
+[`docs/adr/`](docs/adr/).
+
+**Proven, not claimed** (2026-09-20): a rebuilt VPS was back to a working system
+**21 minutes** after the first root login from one encrypted backup set
+([protocol](docs/backup-restore.md#restore-test-protocol)); the security baseline
+was measured from outside — port scan, TLS, headers — and with the CIS Docker
+Benchmark, **12 → 44 of 117** after three fixes, every remaining finding
+classified ([verification](docs/security.md#verification)); 23 problems are
+recorded with root cause and fix ([problems](docs/problems.md)).
+
+## At a glance
+
+```mermaid
+flowchart LR
+  B([Browser / git client]) -->|HTTPS :443, SSH :2222| C
+  subgraph host["one Debian 13 host — Docker, userns-remap"]
+    C["Caddy<br/>TLS with private CA<br/>security headers"]
+    G["GitLab CE"]
+    W["XWiki"]
+    P["OpenProject"]
+    L["lldap<br/>directory"]
+    C -->|git.lab.test| G
+    C -->|wiki.lab.test| W
+    C -->|pm.lab.test| P
+    C -->|ldap.lab.test + basic-auth gate| L
+    G -.->|LDAP| L
+    W -.->|LDAP| L
+    P -.->|LDAP| L
+    G ==>|webhook: MR, pipeline, comment| P
+    G -.->|external wiki| W
+    P -.->|Documentation attribute| W
+  end
+  S[("/srv/backups<br/>age-encrypted sets<br/>nightly timer")] -->|rsync pull| WS([workstation])
+  host -->|backup.sh| S
+```
+
+Solid arrows: user traffic through the proxy. Dotted: shared identity and the
+documentation links. Double: the GitLab → OpenProject webhook. Details:
+[`docs/architecture.md`](docs/architecture.md), [`docs/integration.md`](docs/integration.md).
+
+## Contents
+
+- [Repository layout](#repository-layout)
+- [Quick start](#quick-start)
+- [Evaluating this repository](#evaluating-this-repository)
+- [Documentation](#documentation)
+- [Runbook](#runbook): [workstation](#workstation-setup) · [host](#host-preparation) · [first start](#first-start-of-the-stacks) · [backup and restore](#backup-and-restore) · [certificates](#certificate-renewal-yearly) · [upgrades](#upgrades) · [project onboarding](#project-onboarding) · [users](#on--and-offboarding) · [secrets](#secrets-rotation)
+- [Tooling and use of AI assistance](#tooling-and-use-of-ai-assistance)
+- [License](#license)
 
 ## Repository layout
 
