@@ -101,18 +101,24 @@ scp ~/lab-pki/issued/*.crt ~/lab-pki/issued/*.key ~/lab-pki/ca.crt lab:~/certs-u
 ssh lab
 sudo install -m 644 -o root -g root ~/certs-upload/*.crt /srv/proxy/certs/
 sudo install -m 600 -o root -g root ~/certs-upload/*.key /srv/proxy/certs/
+sudo chown 101000:101000 /srv/proxy/certs/*.key
 rm -r ~/certs-upload
+ls -ln /srv/proxy/certs/    # *.crt, ca.crt: -rw-r--r-- 0 0    *.key: -rw------- 101000 101000
 ```
-`install` copies and sets mode and owner in one step. The owner of the key
-files is adjusted to the (userns-remapped) UID of the Caddy process when the
-proxy stack is set up — see [`proxy/README.md`](../proxy/README.md).
+`lab` is an SSH alias for the admin account on the host (`~/.ssh/config`);
+without one, use `<admin>@<server-ip>`. `install` copies and sets mode and
+owner in one step. The keys then go to `101000`, the host UID of the Caddy
+process (container UID 1000 + the `userns-remap` offset 100000,
+[ADR-0002](../docs/adr/0002-os-and-docker.md)). **Do not skip the `chown`:** with `root` as owner Caddy cannot
+read the keys and does not start at all — no site is reachable
+([P-024](../docs/problems.md#p-024--caddy-restart-loop-on-a-first-install-the-key-files-belong-to-root)).
 
 ## Renewal runbook (yearly)
 
 1. On the workstation: `mv ~/lab-pki/issued/<host>.crt ~/lab-pki/issued/<host>.crt.$(date +%F)`
    (the script refuses to overwrite an existing certificate on purpose).
 2. `./pki/issue-cert.sh <host>` — a new key pair and certificate are created.
-3. Copy to the host as above; restore the owner of the key file.
+3. Copy to the host as above, including the `chown 101000:101000` of the new key.
 4. Restart Caddy: `sudo docker compose -f ~/Test-Projekt/proxy/compose.yaml restart caddy`
    (the admin API is disabled in the Caddyfile, so `caddy reload` is unavailable; a restart
    costs about one second, once a year).
@@ -128,4 +134,7 @@ proxy stack is set up — see [`proxy/README.md`](../proxy/README.md).
   Chrome → Settings → Privacy and security → Security → Manage certificates →
   Authorities → Import.
 - Name resolution: add `<server-ip>  git.lab.test wiki.lab.test pm.lab.test ldap.lab.test`
-  to `/etc/hosts`.
+  to `/etc/hosts` and check it with `getent hosts git.lab.test` (must print
+  `<server-ip>`). Update the line whenever the host is rebuilt: the checks
+  with `curl --resolve` bypass `/etc/hosts` and stay green while the browser
+  still goes to the old address.
