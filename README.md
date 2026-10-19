@@ -277,14 +277,8 @@ explained by the author. Documentation drafts were reviewed before each commit.
 No credentials or private keys were ever shared with the assistant, and every
 commit up to the hand-in was made by the author.
 
-After the hand-in (October 2026) the way of working changed, and this
-paragraph says so: the author walked through a fresh installation by hand;
-the assistant followed along with read-only access to that short-lived test
-server, recorded every hesitation and deviation, and then wrote and committed
-the changes listed in [`CHANGELOG.md`](CHANGELOG.md) — the installation guide,
-the restructured READMEs and the script fixes — on a branch. The author
-reviewed each change before merging it. The test server used throw-away
-credentials and was deleted afterwards.
+Changes after the hand-in were drafted with the assistant as well; they are
+listed in [`CHANGELOG.md`](CHANGELOG.md).
 
 ## License
 
