@@ -29,6 +29,10 @@ one installation path, tested by a first-time reader.
 
 ### Fixed
 
+Checked locally (`bash -n`, `shellcheck`, the failure paths in a sandbox);
+**not yet run on a host** — remove this note once `backup.sh` and a restore
+have run with these versions.
+
 - `scripts/restore.sh` takes the CA from the backup set instead of the
   repository. A fresh clone carries the reference build's CA, so after a
   restore of any other build GitLab and OpenProject trusted the wrong CA
