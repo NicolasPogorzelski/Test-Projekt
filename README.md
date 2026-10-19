@@ -275,10 +275,7 @@ line by line by the author, following the official documentation and the
 assistant's guidance; every line and every decision recorded in the ADRs can be
 explained by the author. Documentation drafts were reviewed before each commit.
 No credentials or private keys were ever shared with the assistant, and every
-commit up to the hand-in was made by the author.
-
-Changes after the hand-in were drafted with the assistant as well; they are
-listed in [`CHANGELOG.md`](CHANGELOG.md).
+commit was made by the author.
 
 ## License
 

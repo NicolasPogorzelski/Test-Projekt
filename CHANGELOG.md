@@ -52,8 +52,7 @@ have run with these versions.
   instead of carrying their own, diverging first-start instructions.
 - `README.md`: "Installation" points to the guide; the quick start and the
   host-preparation runbook, which duplicated it, are gone; the remaining
-  runbook is "Operations". The AI-assistance section is the hand-in text,
-  limited to the time up to the hand-in, plus a pointer to this changelog.
+  runbook is "Operations".
 - `docs/backup-restore.md`: the CA travels in the set; a failed backup
   leaves no plaintext; restore prerequisites refer to the install guide.
 - OpenProject documentation uses the menu names of OpenProject 16.6.
