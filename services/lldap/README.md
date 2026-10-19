@@ -3,6 +3,8 @@
 Design: [ADR-0006](../../docs/adr/0006-identity.md) (why lldap, directory
 layout), [ADR-0011](../../docs/adr/0011-lldap-container.md) (container
 decisions). Client configuration per service: [`docs/integration.md`](../../docs/integration.md).
+First installation, step by step: [`docs/install.md`](../../docs/install.md)
+5.7 (start) and 5.8 (directory). This file is the reference for the stack.
 
 ## Files
 - `compose.yaml` — one rootless container: UI on `lldap:17170` (reached by
@@ -17,42 +19,40 @@ decisions). Client configuration per service: [`docs/integration.md`](../../docs
 ```
 Created by [`scripts/bootstrap.sh`](../../scripts/bootstrap.sh). Networks `edge` and `ldap` exist (bootstrap).
 
-## First start
-```
-cd ~/Test-Projekt/services/lldap
-install -m 600 /dev/null .env && printf 'LLDAP_JWT_SECRET=%s\nLLDAP_KEY_SEED=%s\nLLDAP_LDAP_USER_PASS=%s\n' \
-  "$(openssl rand -base64 32)" "$(openssl rand -base64 32)" "$(openssl rand -base64 24)" > .env
-cat .env      # copy LLDAP_KEY_SEED and LLDAP_LDAP_USER_PASS into the password manager now
-sudo docker compose config --quiet && sudo docker compose up -d
-sudo docker logs lldap
-```
-All three values are generated, so no secret ever appears on the command
-line or in the shell history; `install -m 600 /dev/null .env` creates the
-file with mode 600 before anything is written into it.
-The key seed must never change afterwards; the admin password can be
-changed in the UI later (then update `.env` too, or set
-`LLDAP_FORCE_LDAP_USER_PASS_RESET` — see the config template).
+## The three secrets in `.env`
+Generated on the host by the `install … printf` line in
+[`docs/install.md`](../../docs/install.md) 5.7, so no secret appears on the
+command line or in the shell history; `install -m 600 /dev/null .env` creates
+the file with mode 600 before anything is written into it. Run that line once:
+a second run writes a new key seed.
 
-Then `https://ldap.lab.test` → user `admin`, the password from `.env`.
+| Variable | Purpose | Change later? |
+|---|---|---|
+| `LLDAP_JWT_SECRET` | signs UI sessions | yes — logs everyone out of the UI |
+| `LLDAP_KEY_SEED` | derives the key that encrypts stored secrets | **never** — a new seed breaks the directory; part of every backup |
+| `LLDAP_LDAP_USER_PASS` | password of the built-in `admin` (UI and LDAP bind) | read on the very first start only; change it in the UI afterwards (then `.env` no longer reflects it, or set `LLDAP_FORCE_LDAP_USER_PASS_RESET` — see the config template) |
 
-## Directory set-up (ADR-0006, once)
-In the web UI, as `admin`:
+## Directory layout (ADR-0006)
+Created once in the web UI ([`docs/install.md`](../../docs/install.md) 5.8):
 
-1. **Groups** → create `git_user`, `wiki_user`, `pm_user` (one access group
-   per service; a service only accepts members of its group).
-2. **Users** → create the service accounts `svc-gitlab`, `svc-xwiki`,
-   `svc-openproject` (e-mail is mandatory in lldap, use
-   `svc-<name>@lab.test`), each with a generated password that goes into the
-   respective stack's `.env` (`*_LDAP_BIND_PASSWORD`). Add each to the
-   built-in group **`lldap_strict_readonly`**: they may search and bind,
-   nothing else.
-3. **Users** → two test users (e.g. `alice`, `bob`) with `git_user` (and
-   later `wiki_user`/`pm_user`) membership.
+| Kind | Name | Groups | Purpose |
+|---|---|---|---|
+| group | `git_user`, `wiki_user`, `pm_user` | — | one access group per service; a service accepts only members of its group |
+| service account | `svc-gitlab`, `svc-xwiki`, `svc-openproject` | `lldap_strict_readonly` | bind accounts of the services: search and bind, nothing else |
+| test user | `alice` / `bob` | all three / `git_user` only | positive and negative sign-in test |
 
-The resulting DNs the services use:
+Where each bind password goes: `svc-gitlab` into `services/gitlab/.env`
+(`GITLAB_LDAP_BIND_PASSWORD`); `svc-openproject` and `svc-xwiki` into the
+LDAP form of the respective admin UI — not into a `.env`.
+
+A service account **without** `lldap_strict_readonly` binds successfully but
+sees only itself, so every search returns nothing and the service later
+reports "no users found". The `ldapsearch` check in 5.8 catches that.
+
+The DNs the services use:
 - users: `uid=<username>,ou=people,dc=lab,dc=test`
 - groups: `cn=<group>,ou=groups,dc=lab,dc=test`
-- bind user for GitLab: `uid=svc-gitlab,ou=people,dc=lab,dc=test`
+- bind users: `uid=svc-<service>,ou=people,dc=lab,dc=test`
 
 ## On-/offboarding (runbook)
 **Onboarding:** Users → Create user (username, e-mail, display name, **first

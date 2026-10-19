@@ -29,6 +29,9 @@ Chronological. Format: symptom → verification → cause → fix / decision.
 - [P-023](#p-023--the-lldap-gates-401-carries-none-of-the-proxys-security-headers) — The lldap gate's 401 carries none of the proxy's security headers
 - [P-024](#p-024--caddy-restart-loop-on-a-first-install-the-key-files-belong-to-root) — Caddy restart loop on a first install: the key files belong to `root`
 - [P-025](#p-025--first-install-walkthrough-on-2026-10-18-smaller-gaps-bundled) — First-install walkthrough on 2026-10-18: smaller gaps, bundled
+- [P-026](#p-026--other-builds-trusted-the-reference-builds-ca) — Other builds trusted the reference build's CA
+- [P-027](#p-027--a-failed-encryption-left-the-plaintext-backup-set-behind) — A failed encryption left the plaintext backup set behind
+- [P-028](#p-028--literal-walk-through-of-the-install-guide-on-2026-10-19) — Literal walk-through of the install guide on 2026-10-19
 
 ## P-001 — Flatpak browsers do not use the system CA trust store
 - **Symptom:** (anticipated) after `update-ca-trust` on the Fedora-based
@@ -512,4 +515,73 @@ none stops the stack.
   the script, leaving a 0-byte `.crt` and the `.csr`, and the next run
   refuses with "already exists" (the guard tests `-e`, not `-s`). Workaround:
   remove `<host>.crt`, `.csr` and `.key` from `issued/`. Fix candidate: sign
-  into a temporary file and `mv` on success, guard on `-s`.
+  into a temporary file and `mv` on success, guard on `-s`. **Fixed
+  2026-10-19** exactly that way, plus an `EXIT` trap that removes the files of
+  a failed run.
+
+## P-026 — Other builds trusted the reference build's CA
+- **Symptom:** found in a desk review of the install guide on 2026-10-19,
+  then confirmed on a second build: after a first install from a fresh
+  clone, GitLab's self-call through Caddy and OpenProject's outbound calls to
+  `https://git.lab.test` failed with `unable to get local issuer certificate`
+  / `certificate verify failed`, although the browser trusted every site.
+- **Verification:** `openssl x509 -fingerprint` on `pki/ca.crt` in the
+  host's clone showed `A7:08…` — the reference build's CA — while the leaf
+  certificates in `/srv/proxy/certs/` were signed by the new build's CA.
+  OpenProject mounts `pki/ca.crt` ([`compose.yaml`](../services/openproject/compose.yaml));
+  the GitLab README and [`scripts/restore.sh`](../scripts/restore.sh) copied the same file into
+  `trusted-certs/`.
+- **Cause:** the repository ships the reference build's public CA
+  certificate, and `make-ca.sh` replaces it only in the *workstation's*
+  clone. The host clones from GitHub, so it carries the reference CA. In the
+  reference build both were the same file, so nothing showed.
+- **Fix:** [`docs/install.md`](install.md) 5.2 copies your CA into the host's clone, 5.9 and
+  5.14 take it from `/srv/proxy/certs/ca.crt`; `restore.sh` takes it from the
+  backup set (`proxy/certs.tar.gz`) instead of the repository. Lesson: a file
+  that is "public, so it can live in git" can still be specific to one
+  installation.
+
+## P-027 — A failed encryption left the plaintext backup set behind
+- **Symptom:** (found by reading the code during the 2026-10 review) when
+  `age` fails — a placeholder or typo in `backup-recipients.txt` gives
+  `malformed recipient at line 1` — `backup.sh` exits after `finalize()` has
+  already renamed the set to `/srv/backups/<stamp>/`, group `backup`, mode
+  `0750/0640`. Every secret of the installation stays there unencrypted until
+  someone removes it by hand; the header comment claimed the opposite.
+- **Cause:** the plaintext was removed only on the success path; the `EXIT`
+  trap restarted containers but did not clean up. The recipients were first
+  used at the very end, after every service had been paused.
+- **Fix:** the recipients are tested in the preconditions
+  (`age -R … </dev/null`), so a malformed key fails before anything is
+  stopped; on any later failure the trap removes the group-readable set and a
+  half-written `.tar.age.partial`, keeping only a root-only `<stamp>.partial`
+  for inspection. Checked in a sandbox for both failure points and the success
+  path.
+
+## P-028 — Literal walk-through of the install guide on 2026-10-19
+A first-time reader followed [`docs/install.md`](install.md) word for word on a fresh server, from
+an empty workstation to the decrypted backup. Every service came up and every
+expected output matched; what cost time was the guide, not the code. All
+fixed in the guide:
+- **Wrong machine, three times** — a backup key created on the host, the
+  recipient written on the workstation, `systemctl` run locally. "On the
+  **host**" in the prose was not enough; every code block now starts with
+  `# workstation` or `# host`.
+- **Copy-paste across wrapped lines** — a terminal Markdown viewer wrapped
+  long commands; a pasted line break turned one command into two (a clone
+  into `~/Test-`, a URL with a space, `000` twice). The guide warns about it.
+- **Placeholders typed literally** — `<stamp>` became an input redirection.
+  A placeholder table up front, and the place each value comes from.
+- **`/etc/hosts` with two lines** — the new line was appended below the old
+  one, which still won. Now: exactly one line, and the check expects one.
+- **Host key accepted unchecked**, after a typo in the address had connected
+  to a stranger's server that asked for a password. The comparison is now
+  part of the step, and a password prompt means abort.
+- **Hash typed as the password** at the basic-auth gate. The guide says
+  which of the two goes where, and why.
+- **Steps that were only linked were skipped** — OpenProject and XWiki
+  hardening. They are in the guide now, with the menu names of
+  OpenProject 16.6 (self-registration under *Login and registration*, no
+  *Protocol* field).
+- **A test placed before its preconditions** — the backup test sat in
+  section 4 and was run there. It is section 5.16 now.

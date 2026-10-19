@@ -5,23 +5,9 @@ One linear path, top to bottom. On 2026-10-19 the whole guide (sections 1 to
 without any prior state; the few steps not exercised in that run are marked
 *not re-verified*.
 
-This guide was written after a second build from scratch and corrects the
-stack READMEs where they differ. Where a linked README says something else,
-**this guide applies**. Known differences:
-
-| README | says | correct (this guide) |
-|---|---|---|
-| `services/gitlab/README.md`, `services/xwiki/README.md` | install `~/Test-Projekt/pki/ca.crt` on the host | that file is the reference build's CA until 5.2 replaces it; this guide uses your CA |
-| `pki/README.md` | `scp … lab:~/certs-upload/`, then `install` the keys | create the directory first, and `chown 101000` the keys (5.1, 5.2) |
-| `proxy/README.md` | checks with `curl --resolve` | without `--resolve`, so `/etc/hosts` is tested too (5.6) |
-| `proxy/README.md` | `caddy validate` as shown | needs a placeholder auth file (5.3) |
-| `proxy/README.md` | `docker logs caddy \| tail` | `docker logs caddy 2>&1 \| tail` (5.5) |
-| `services/lldap/README.md` | every service-account password goes into its stack's `.env` | only GitLab's; OpenProject and XWiki take it in their admin UI |
-| `services/openproject/README.md` | Authentication → *LDAP authentication* | Authentication → **LDAP connections** (OpenProject 16.6) |
-| `services/openproject/README.md` | self-registration under *Users and permissions → Settings*; check *Protocol* under *System settings* | Authentication → **Login and registration**; there is no *Protocol* field — `compose.yaml` sets HTTPS (5.13) |
-| `services/openproject/README.md` | `compose ps` shows the seeder | only `compose ps -a` does |
-| `services/xwiki/README.md` | activate the LDAP authenticator, then fill the form | fill the form first (5.15) — the other order can lock everyone out |
-| `scripts/backup-recipients.txt` | — | holds the reference build's key; replace it (4.1) |
+This is the only installation path. The READMEs next to each stack are the
+reference — what each part is, why it is configured that way, how to verify
+and operate it — and link back here for the steps.
 
 ## How to read this guide
 
@@ -176,10 +162,8 @@ Expected for each: `…/issued/<host>.crt: OK`, a validity of one year and
 `.crt` (mode 644) and four `.key` (mode 600, not encrypted — Caddy reads them
 at start-up). Details: [`pki/README.md`](../pki/README.md#issue-certsh-hostname--issue-a-service-certificate).
 
-If a call stops with `bad decrypt` (wrong passphrase), it leaves an empty
-`<host>.crt` plus `<host>.csr` and `<host>.key` behind, and the next attempt
-refuses with `already exists`. Remove those three files, then run the call
-again.
+If a call stops with `bad decrypt` (wrong passphrase), it removes what it
+had created; run it again.
 
 ### 2.5 Trust the CA in your browser
 
@@ -596,7 +580,7 @@ values are random. `LLDAP_KEY_SEED` must never change afterwards;
 `LLDAP_LDAP_USER_PASS` is the password of the lldap user `admin` — read only
 on the very first start; if you change the password in the UI later, `.env`
 no longer reflects it. Details:
-[`services/lldap/README.md`](../services/lldap/README.md#first-start).
+[`services/lldap/README.md`](../services/lldap/README.md#the-three-secrets-in-env).
 
 Normal on the first start: `WARNING: A key_seed was given, we will ignore the
 key_file …` and four `WARN … Could not find … trying to create it` lines (the
@@ -749,7 +733,7 @@ GitLab then demands the 2FA set-up for `root` before anything else: scan the
 QR code with a TOTP app and store the recovery codes in the password
 manager. From now on the admin area asks again for password and TOTP code
 (*Enter admin mode*). Reasons for each setting:
-[`services/gitlab/README.md`](../services/gitlab/README.md#first-start).
+[`services/gitlab/README.md`](../services/gitlab/README.md#why-the-first-start-settings).
 
 Check from the workstation, in the repository root, that sign-up is closed:
 
@@ -904,7 +888,7 @@ sudo docker compose config --quiet && sudo docker compose up -d
 
 Expected: `Certificate was added to keystore`, then `/srv/xwiki/cacerts`
 owned by root, mode 644; `xwiki-db` healthy, `xwiki` started. Line by line:
-[`services/xwiki/README.md`](../services/xwiki/README.md#first-start).
+[`services/xwiki/README.md`](../services/xwiki/README.md#jvm-trust-store).
 
 **Right after the start**, open `https://wiki.lab.test`: the wizard creates
 the `admin` account and installs the *XWiki Standard Flavor* (several
@@ -928,9 +912,8 @@ Expected for both: `302` to `…/bin/login/XWiki/XWikiLogin…`.
 
 ### 5.15 XWiki — LDAP
 
-Three parts, as in
-[`services/xwiki/README.md`](../services/xwiki/README.md#after-the-wizard-admin)
-step 2 — but **fill the form before activating the authenticator**. Once the
+Three parts ([`services/xwiki/README.md`](../services/xwiki/README.md#ldap)) —
+**fill the form before activating the authenticator**. Once the
 `xwiki.cfg` line is active, every sign-in goes through LDAP first; with an
 empty form (or no form at all) even `admin` is locked out.
 

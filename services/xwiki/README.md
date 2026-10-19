@@ -2,7 +2,9 @@
 
 Design: [ADR-0013](../../docs/adr/0013-xwiki-container.md) (root without
 capabilities, JVM trust store, proxy headers, heap); product choice and image
-in [`docs/architecture.md`](../../docs/architecture.md).
+in [`docs/architecture.md`](../../docs/architecture.md). First installation,
+step by step: [`docs/install.md`](../../docs/install.md) 5.14–5.15. This file
+is the reference for the stack.
 
 ## Files
 - `compose.yaml` — `db` (PostgreSQL 17, non-root, all capabilities dropped,
@@ -22,68 +24,59 @@ in [`docs/architecture.md`](../../docs/architecture.md).
 Directories by [`scripts/bootstrap.sh`](../../scripts/bootstrap.sh); networks `edge`/`ldap` exist
 (bootstrap), `xwiki_internal` is created by this stack.
 
-## First start
-```
-cd ~/Test-Projekt/services/xwiki
-install -m 600 /dev/null .env && printf 'XWIKI_DB_PASSWORD=%s\n' "$(openssl rand -hex 24)" > .env
-# JVM trust store: the image's cacerts plus our CA, written to the host (repeat after an image update)
-sudo docker run --rm -v ~/Test-Projekt/pki/ca.crt:/ca.crt:ro --entrypoint sh xwiki:17.10.13-postgres-tomcat \
-  -c 'keytool -importcert -noprompt -cacerts -storepass changeit -alias lab-test-root-ca -file /ca.crt >&2 && cat "$JAVA_HOME/lib/security/cacerts"' \
-  | sudo tee /srv/xwiki/cacerts > /dev/null && sudo chmod 644 /srv/xwiki/cacerts && ls -l /srv/xwiki/cacerts
-sudo docker compose config --quiet && sudo docker compose up -d
-sudo docker logs -f xwiki        # WAR unpacks, then "Server startup in [...] ms"; 1-3 min on first start
-```
-The `keytool` line runs a throw-away container with the CA mounted, adds the
-CA to the JVM's default store (`-cacerts`; `changeit` is Java's fixed default
-password for that file, it protects nothing) and prints the resulting file to
-stdout, which `tee` writes to `/srv/xwiki/cacerts`. keytool's own messages go
-to stderr so they do not end up in the file. The file must exist before
-`compose up`: Docker would otherwise create a directory at the mount point.
+## JVM trust store
+XWiki's JVM keeps its own list of trusted CAs and ignores the system's, so it
+must learn the lab CA. [`docs/install.md`](../../docs/install.md) 5.14 builds
+`/srv/xwiki/cacerts` with a throw-away container: the CA from
+`/srv/proxy/certs/ca.crt` is mounted, `keytool -importcert -cacerts` adds it to
+the image's default store (`changeit` is Java's fixed default password for that
+file, it protects nothing), and the resulting file is printed to stdout, which
+`sudo tee` writes to the host. keytool's own messages go to stderr so they do
+not end up in the file. The file must exist before `compose up`: Docker would
+otherwise create a directory at the mount point. Rebuild it after an image
+update (the JRE may change) or a CA change — not for a renewed leaf
+certificate.
 
-Then `https://wiki.lab.test` → the distribution wizard runs on the first
-visit: create the admin user (username `admin`, password from the password
-manager), install the default flavor ("XWiki Standard Flavor"), wait for the
-extensions to install (several minutes).
+## Wizard and hardening
+On the first visit the distribution wizard creates the `admin` account and
+installs the *XWiki Standard Flavor* (several minutes). Run it right after the
+start: until then anyone who reaches `wiki.lab.test` can create that account.
+Then close registration and anonymous reading (Administer Wiki → Users &
+Rights → Rights → tab Users → *Unregistered Users*: **Register** to ✗ — it
+cycles empty → ✓ → ✗ —, *Prevent unregistered users from viewing / editing
+pages*; *Registration* closed). Check, logged out:
+`/bin/register/XWiki/XWikiRegister` and `/bin/view/Main/` both answer `302`
+to the login page.
 
-## After the wizard (admin)
-1. Registration and anonymous reading off: Administration → *Users &
-   Rights* → *Rights* → tab **Users** → row *Unregistered Users*: click
-   **Register** until it shows deny (✗); tick *Prevent unregistered users
-   from viewing pages* and *… from editing pages*. On the *Registration*
-   page set "Who should be allowed to create new user accounts" to
-   *Closed* if offered. Verify, logged out:
-   `/bin/register/XWiki/XWikiRegister` and `/bin/view/Main/` both redirect
-   to the login page.
-2. LDAP ([ADR-0013](../../docs/adr/0013-xwiki-container.md) §5) — three parts, all needed:
-   1. **Two extensions.** Administration → *Extensions*: install **LDAP
-      Authenticator** (`org.xwiki.contrib.ldap:ldap-authenticator`, the
-      logic) *and* **LDAP Application** (`org.xwiki.contrib.ldap:ldap-ui`,
-      the admin form). The second one does not show up in the default
-      search — use *Advanced search* with the id and version (9.16.6).
-   2. **Activate the authenticator** — a `xwiki.cfg` line, no UI for it in
-      this version (the LDAP section shows "LDAP authentication is not
-      enabled" until it is set). The entrypoint copies a `xwiki.cfg` found
-      in the permanent directory into `WEB-INF` on every start:
-      ```
-      sudo docker cp xwiki:/usr/local/tomcat/webapps/ROOT/WEB-INF/xwiki.cfg /srv/xwiki/data/data/xwiki.cfg
-      echo 'xwiki.authentication.authclass=org.xwiki.contrib.ldap.XWikiLDAPAuthServiceImpl' | sudo tee -a /srv/xwiki/data/data/xwiki.cfg
-      sudo chown 100000:100000 /srv/xwiki/data/data/xwiki.cfg && sudo chmod 640 /srv/xwiki/data/data/xwiki.cfg
-      sudo docker compose restart xwiki      # log: "Synchronizing config file xwiki.cfg..."
-      ```
-      That file is now part of the data volume (and of the backup).
-   3. **Configure** — Administration → *Other* → *LDAP*
-      (`?section=LDAP`): Ldap = Yes, server `lldap`, port `3890`,
-      login matching `uid=svc-xwiki,ou=people,dc=lab,dc=test` + its
-      password, restrict to group `cn=wiki_user,ou=groups,dc=lab,dc=test`,
-      base DN `ou=people,dc=lab,dc=test`, UID attribute `uid`, *Try local
-      login* Yes (keeps `admin` usable), update user after login Yes,
-      user fields mapping `first_name`→`givenName`, `last_name`→`sn`,
-      `email`→`mail`. Save.
-   Add `alice` to `wiki_user` in lldap; sign in as `alice` (works), as
-   `bob` (refused). The log shows a `WARN … Abusive modification of the
-   cached document [xwiki:XWiki.alice()]` on the first LDAP sign-in — a
-   known incompatibility warning of the 9.x authenticator with XWiki 17,
-   tolerated by the platform; the profile is created and the login works.
+## LDAP
+Design: [ADR-0013](../../docs/adr/0013-xwiki-container.md) §5. Three parts,
+all needed, **in this order** — steps in
+[`docs/install.md`](../../docs/install.md) 5.15:
+
+1. **Two extensions**, both 9.16.6: *LDAP Authenticator*
+   (`org.xwiki.contrib.ldap:ldap-authenticator`, the sign-in logic) and *LDAP
+   Application* (`org.xwiki.contrib.ldap:ldap-ui`, the admin form; may need
+   *Advanced search* by id). Check *Installed extensions* — a success message
+   alone is not proof.
+2. **The form** (`?section=LDAP`): server `lldap:3890`, bind
+   `uid=svc-xwiki,ou=people,dc=lab,dc=test` + its password, group
+   `cn=wiki_user,ou=groups,dc=lab,dc=test`, base DN `ou=people,dc=lab,dc=test`,
+   UID attribute `uid`, *Try local login* **Yes** (keeps `admin` usable), user
+   fields `first_name`→`givenName`, `last_name`→`sn`, `email`→`mail`.
+3. **Activate** — one line in `xwiki.cfg`, no UI for it in this version. The
+   entrypoint copies a `xwiki.cfg` from the permanent directory into
+   `WEB-INF` on every start, so the line lives in
+   `/srv/xwiki/data/data/xwiki.cfg` (owner 100000, 640) and is part of the
+   backup.
+
+Why the order: once the line is active, every sign-in goes through LDAP first;
+with an empty or missing form even `admin` is locked out. The way back is to
+delete the line and restart — the form values are kept.
+
+On the first LDAP sign-in the log shows `WARN … Abusive modification of the
+cached document [xwiki:XWiki.alice()]` — a known incompatibility warning of
+the 9.x authenticator with XWiki 17, tolerated by the platform; the profile is
+created and the login works.
 
 ## Verification (evidence for docs/security.md)
 ```

@@ -26,12 +26,19 @@ workstation.
 
 ## CA certificate fingerprint
 
+[`pki/ca.crt`](ca.crt) as committed is the CA of the **reference build**:
+
 ```
 SHA256 A7:08:31:80:94:29:B9:64:81:47:C3:83:9F:D3:55:04:AE:37:06:FD:81:9A:0D:AB:A7:9B:3E:3D:38:97:49:B0
 ```
 
-Compare after importing: `openssl x509 -in pki/ca.crt -noout -fingerprint -sha256`.
-A different value means the file was replaced on the way — do not trust it.
+A new installation creates its own CA: `make-ca.sh` overwrites `pki/ca.crt` in
+your clone (`git status` then shows `M pki/ca.crt`), and the fingerprint the
+script prints is the reference for every later check
+([`docs/install.md`](../docs/install.md) 2.3). Compare with
+`openssl x509 -in pki/ca.crt -noout -fingerprint -sha256`; a value that is
+neither yours nor the one above means the file was replaced on the way — do
+not trust it.
 
 ## `make-ca.sh` — create the root CA (run once)
 
@@ -92,33 +99,50 @@ openssl x509 -req -in <host>.csr -CA ca.crt -CAkey ca.key -CAcreateserial -days 
 | `extendedKeyUsage=serverAuth` | TLS server; browsers require it |
 | `subjectKeyIdentifier`, `authorityKeyIdentifier` | link the leaf to the CA |
 
-The script ends with `openssl verify -CAfile ca.crt <host>.crt`, which must print `OK`.
+The script signs into `<host>.crt.tmp` and renames it only after
+`openssl verify -CAfile ca.crt` printed `OK`. A failed run — typically a wrong
+CA passphrase (`bad decrypt`) — removes its key, CSR and partial certificate,
+so it can simply be repeated. An existing, non-empty `<host>.crt` is never
+overwritten.
 
 ## Deploying certificates to the host
 
+Step by step with the expected output: [`docs/install.md`](../docs/install.md)
+5.1 (copy) and 5.2 (install). In short:
+
 ```
+# workstation
+ssh lab 'mkdir -m 700 ~/certs-upload'
 scp ~/lab-pki/issued/*.crt ~/lab-pki/issued/*.key ~/lab-pki/ca.crt lab:~/certs-upload/
-ssh lab
+```
+
+```
+# host
 sudo install -m 644 -o root -g root ~/certs-upload/*.crt /srv/proxy/certs/
 sudo install -m 600 -o root -g root ~/certs-upload/*.key /srv/proxy/certs/
 sudo chown 101000:101000 /srv/proxy/certs/*.key
+cp ~/certs-upload/ca.crt ~/Test-Projekt/pki/ca.crt
 rm -r ~/certs-upload
 ls -ln /srv/proxy/certs/    # *.crt, ca.crt: -rw-r--r-- 0 0    *.key: -rw------- 101000 101000
 ```
-`lab` is an SSH alias for the admin account on the host (`~/.ssh/config`);
-without one, use `<admin>@<server-ip>`. `install` copies and sets mode and
-owner in one step. The keys then go to `101000`, the host UID of the Caddy
+
+`lab` is the SSH alias for the admin account on the host
+([`docs/install.md`](../docs/install.md) 3.3). `install` copies and sets mode
+and owner in one step. The keys then go to `101000`, the host UID of the Caddy
 process (container UID 1000 + the `userns-remap` offset 100000,
-[ADR-0002](../docs/adr/0002-os-and-docker.md)). **Do not skip the `chown`:** with `root` as owner Caddy cannot
-read the keys and does not start at all — no site is reachable
-([P-024](../docs/problems.md#p-024--caddy-restart-loop-on-a-first-install-the-key-files-belong-to-root)).
+[ADR-0002](../docs/adr/0002-os-and-docker.md)). **Do not skip the `chown`:**
+with `root` as owner Caddy cannot read the keys and does not start at all — no
+site is reachable ([P-024](../docs/problems.md#p-024--caddy-restart-loop-on-a-first-install-the-key-files-belong-to-root)).
+The `cp` gives the host's clone your CA: OpenProject mounts `pki/ca.crt`, and
+`scripts/restore.sh` writes the CA from the backup set to the same place.
 
 ## Renewal runbook (yearly)
 
 1. On the workstation: `mv ~/lab-pki/issued/<host>.crt ~/lab-pki/issued/<host>.crt.$(date +%F)`
    (the script refuses to overwrite an existing certificate on purpose).
 2. `./pki/issue-cert.sh <host>` — a new key pair and certificate are created.
-3. Copy to the host as above, including the `chown 101000:101000` of the new key.
+3. Copy to the host as above, including the `chown 101000:101000` of the new
+   key (the `cp` of `ca.crt` is not needed — the CA did not change).
 4. Restart Caddy: `sudo docker compose -f ~/Test-Projekt/proxy/compose.yaml restart caddy`
    (the admin API is disabled in the Caddyfile, so `caddy reload` is unavailable; a restart
    costs about one second, once a year).
@@ -126,15 +150,22 @@ read the keys and does not start at all — no site is reachable
 
 ## Importing the CA on a workstation
 
+Import **your** `ca.crt` — after `make-ca.sh` that is `pki/ca.crt` of your
+clone, never the one of a fresh clone from GitHub.
+
 - **Fedora / Bazzite system store:** `sudo cp pki/ca.crt /etc/pki/ca-trust/source/anchors/lab-test-ca.crt && sudo update-ca-trust`
 - **Debian/Ubuntu:** `sudo cp pki/ca.crt /usr/local/share/ca-certificates/lab-test-ca.crt && sudo update-ca-certificates`
-- **Flatpak browsers do not read the system store** (see [`docs/problems.md`](../docs/problems.md), [P-001](../docs/problems.md#p-001--flatpak-browsers-do-not-use-the-system-ca-trust-store)):
+- **Browsers** — Flatpak browsers do not read the system store at all
+  ([P-001](../docs/problems.md#p-001--flatpak-browsers-do-not-use-the-system-ca-trust-store)):
   Firefox → Settings → Privacy & Security → Certificates → View Certificates →
-  Authorities → Import → select [`pki/ca.crt`](ca.crt) → "Trust this CA to identify websites".
-  Chrome → Settings → Privacy and security → Security → Manage certificates →
-  Authorities → Import.
-- Name resolution: add `<server-ip>  git.lab.test wiki.lab.test pm.lab.test ldap.lab.test`
-  to `/etc/hosts` and check it with `getent hosts git.lab.test` (must print
-  `<server-ip>`). Update the line whenever the host is rebuilt: the checks
-  with `curl --resolve` bypass `/etc/hosts` and stay green while the browser
-  still goes to the old address.
+  Authorities → Import → "Trust this CA to identify websites". Chrome and
+  Chromium-based browsers: Settings → Privacy and security → Security →
+  Manage certificates, then import it as a trusted authority (menu names
+  differ between versions). Then compare the fingerprint of the imported
+  entry with your own.
+- **Name resolution:** exactly one line
+  `<server-ip>  git.lab.test wiki.lab.test pm.lab.test ldap.lab.test` in
+  `/etc/hosts` — an older line for the same names further up wins. Check with
+  `getent hosts git.lab.test`: one line, `<server-ip>`. Update it whenever the
+  host is rebuilt: checks with `curl --resolve` bypass `/etc/hosts` and stay
+  green while the browser still goes to the old address.

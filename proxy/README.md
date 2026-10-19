@@ -2,6 +2,8 @@
 
 Design: [ADR-0005](../docs/adr/0005-reverse-proxy.md). Implicit behaviour:
 [architecture.md → What Caddy does implicitly](../docs/architecture.md#what-caddy-does-implicitly).
+First installation, step by step: [`docs/install.md`](../docs/install.md)
+5.1–5.6. This file is the reference for the stack.
 
 ## Files
 - `compose.yaml` — the only stack that publishes ports (80, 443).
@@ -25,12 +27,25 @@ sudo ls -ln /srv/proxy/certs/ /srv/proxy/config/   # *.key and ldap-ui.auth: 101
 ```
 
 ## Validate before starting
-On the workstation, with the real image and the issued certificates mounted:
+Neither check changes or starts anything; both catch a broken configuration
+before Caddy goes into a restart loop. On the workstation, from the repository
+root, with the real image, the issued certificates and an empty stand-in for
+the basic-auth file (it exists only on the host):
 ```bash
-podman run --rm -v ./proxy/Caddyfile:/etc/caddy/Caddyfile:ro,Z -v ~/lab-pki/issued:/certs:ro,Z \
-  docker.io/library/caddy:2.11.4-alpine caddy validate --config /etc/caddy/Caddyfile
+# workstation
+touch /tmp/ldap-ui.auth
+docker run --rm \
+  -v "$PWD/proxy/Caddyfile:/etc/caddy/Caddyfile:ro,Z" \
+  -v ~/lab-pki/issued:/certs:ro,Z \
+  -v /tmp/ldap-ui.auth:/config/ldap-ui.auth:ro,Z \
+  docker.io/library/caddy:2.11.4-alpine \
+  caddy validate --config /etc/caddy/Caddyfile
+rm /tmp/ldap-ui.auth
 ```
-On the host: `sudo docker compose -f proxy/compose.yaml config --quiet`.
+`podman` works the same way; `:Z` is for SELinux and ignored elsewhere.
+Expected: `Valid configuration` (plus the warning `Import file is empty` for
+the stand-in). On the host: `sudo docker compose -f proxy/compose.yaml config
+--quiet && echo OK`.
 
 ## Basic auth in front of the lldap UI (once, on the host)
 `ldap.lab.test` carries an additional HTTP basic-auth layer ([ADR-0011](../docs/adr/0011-lldap-container.md)): an
@@ -49,6 +64,12 @@ to start if the file is missing — create it before pulling a Caddyfile that
 imports it. The gate password is a separate secret from the lldap admin
 password (two independent layers).
 
+At the gate you sign in with the username and the **password** typed into
+`hash-password`; the file holds only the bcrypt hash of it, so reading the
+file does not let anyone in. To change the password, hash a new one, replace
+the line and restart Caddy — it reads the file only at start-up, and with the
+admin API off there is no reload.
+
 ## Start, restart, logs
 ```bash
 sudo docker compose -f proxy/compose.yaml up -d
@@ -66,15 +87,20 @@ hostname refuses the connection although the services behind it run.
 - `ldap-ui.auth` missing or unreadable → the basic-auth section above.
 
 ## Verify from the workstation
+From the repository root, through `/etc/hosts` like a browser:
 ```bash
 for h in git wiki pm ldap; do
-  curl -sS --resolve "$h.lab.test:443:<server-ip>" --cacert pki/ca.crt "https://$h.lab.test/" \
-    -o /dev/null -w "$h http=%{http_code} tls_verify=%{ssl_verify_result}\n"
+  curl -sS --cacert pki/ca.crt "https://$h.lab.test/" -o /dev/null \
+    -w "$h http=%{http_code} tls_verify=%{ssl_verify_result} ip=%{remote_ip}\n"
 done
-curl -sS --resolve git.lab.test:80:<server-ip> -o /dev/null -w '%{http_code} -> %{redirect_url}\n' http://git.lab.test/
+curl -sS -o /dev/null -w '%{http_code} -> %{redirect_url}\n' http://git.lab.test/
 ```
-`tls_verify=0` means the chain validates against the private CA. `502` is the
-expected answer while a backend is not running; port 80 must answer `308`.
+`tls_verify=0` means the chain validates against your CA, `ip=` must be the
+host's address. `502` is the expected answer while a backend is not running,
+the lldap gate answers `401`, port 80 must answer `308`. To test a host
+before `/etc/hosts` points to it, add `--resolve "$h.lab.test:443:<server-ip>"`
+— and remember that such a check stays green while the browser still goes
+elsewhere.
 
 ## Hardening summary
 non-root (`1000:1000`) · `cap_drop: ALL` + `cap_add: NET_BIND_SERVICE` (file
