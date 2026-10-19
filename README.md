@@ -128,8 +128,9 @@ LICENSE          MIT
 
 ## Quick start
 
-> Full runbook: see below. Prerequisites: a Debian 13 host with a public IP, a
-> workstation with `openssl`, `ssh` and `git`.
+> Full runbook: see below. Prerequisites: a Debian 13 (amd64) host with a public IP, a
+> workstation with `openssl`, `ssh` and `git`. Other distributions and Docker
+> Desktop are not supported by `bootstrap.sh` — see "Evaluating this repository".
 
 1. **Workstation:** clone this repository, create the CA and the service
    certificates ([`pki/make-ca.sh`](pki/make-ca.sh), [`pki/issue-cert.sh`](pki/issue-cert.sh) — see
@@ -142,7 +143,9 @@ LICENSE          MIT
    hardening, Docker CE with `userns-remap`, apt pin, sudoers rule, `/srv`,
    Docker networks — see [`scripts/README.md`](scripts/README.md)).
 3. Copy [`.env.example`](.env.example) to `.env` in each stack directory and fill in secrets.
-4. Copy the service certificates to `/srv/proxy/certs/`.
+4. Copy the service certificates to `/srv/proxy/certs/` and give the keys to
+   UID `101000` ([`pki/README.md`](pki/README.md), "Deploying certificates to the host") —
+   otherwise Caddy does not start ([P-024](docs/problems.md#p-024--caddy-restart-loop-on-a-first-install-the-key-files-belong-to-root)).
 5. Start the stacks in this order: `proxy`, `lldap`, `gitlab`, `openproject`, `xwiki`.
 6. Configure LDAP in each service and the integrations ([`docs/integration.md`](docs/integration.md)).
 
@@ -225,9 +228,18 @@ disables root and password logins), then:
 
 ```
 sudo apt-get update && sudo apt-get install -y git   # the cloud image ships without git (P-015)
-git clone <this repository> ~/Test-Projekt          # read-only deploy key, see docs/security.md
+git clone https://github.com/NicolasPogorzelski/Test-Projekt.git ~/Test-Projekt
 sudo ~/Test-Projekt/scripts/bootstrap.sh
 ```
+For a private fork, clone with a read-only deploy key instead
+([`docs/security.md`](docs/security.md)).
+
+Expected in the `bootstrap.sh` output besides the `==>` steps: two `WARNING`
+lines about `/etc/subuid` and `/etc/subgid` sharing the range at 100000
+(accepted, [P-008](docs/problems.md#p-008--dockremap-received-the-same-subordinate-range-as-the-admin-user)), three `gpg:` lines creating root's keyring (the script
+checks the fingerprint of Docker's apt key), and about a dozen `Old style
+watch rules are slower` from `augenrules` (informational). Anything that is not `PASS` in the self-test at
+the end is a failure.
 
 The script is idempotent: run it again after any manual change on the host to
 make sure the baseline still holds; the self-test at the end must show only

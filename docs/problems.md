@@ -27,6 +27,8 @@ Chronological. Format: symptom → verification → cause → fix / decision.
 - [P-021](#p-021--gitlab-refuses-the-external-wiki-url-requests-to-the-local-network-are-not-allowed) — GitLab refuses the External wiki URL: "Requests to the local network are not allowed"
 - [P-022](#p-022--the-second-seeded-openproject-project-kept-the-wiki-module) — The second seeded OpenProject project kept the wiki module
 - [P-023](#p-023--the-lldap-gates-401-carries-none-of-the-proxys-security-headers) — The lldap gate's 401 carries none of the proxy's security headers
+- [P-024](#p-024--caddy-restart-loop-on-a-first-install-the-key-files-belong-to-root) — Caddy restart loop on a first install: the key files belong to `root`
+- [P-025](#p-025--first-install-walkthrough-on-2026-10-18-smaller-gaps-bundled) — First-install walkthrough on 2026-10-18: smaller gaps, bundled
 
 ## P-001 — Flatpak browsers do not use the system CA trust store
 - **Symptom:** (anticipated) after `update-ca-trust` on the Fedora-based
@@ -440,3 +442,74 @@ Recorded late (from the day-1 notes) because they were "too small" at the time;
   that the `WWW-Authenticate` challenge survives. Recorded as known gap 10a.
   Lesson: a header policy must be measured on error responses too, not only
   on the happy path.
+
+## P-024 — Caddy restart loop on a first install: the key files belong to `root`
+- **Symptom:** reported by a reviewer who installed from the README: the stack
+  "does not start". All four hostnames refuse the connection, although
+  GitLab, XWiki, OpenProject and lldap run. `sudo docker ps -a` shows
+  `caddy  Restarting (1)`.
+- **Verification:** reproduced on 2026-10-18 on a fresh Debian 13 VPS,
+  following the README exactly. `ls -ln /srv/proxy/certs/` showed every
+  `*.key` as `-rw------- 0 0`; `ldap-ui.auth` was correct (`101000`, `640`),
+  so the keys were the only candidate. `sudo docker logs caddy 2>&1 | tail`,
+  repeated on every restart:
+  `Error: loading initial config: loading new config: loading tls app module: provision tls: loading certificates: open /certs/wiki.lab.test.key: permission denied`.
+  After `sudo chown 101000:101000 /srv/proxy/certs/*.key` and
+  `restart caddy`: `502/502/502/401` with `tls_verify=0` (no backends yet),
+  port 80 `308`.
+- **Cause:** a documentation gap, not a code fault. [`pki/README.md`](../pki/README.md) installed the
+  keys as `root:root 600` and deferred the owner to [`proxy/README.md`](../proxy/README.md), which
+  only listed the target state (`600, owner 101000`) without a command. Caddy
+  runs as container UID 1000 = host UID 101000 under `userns-remap`
+  ([ADR-0002](adr/0002-os-and-docker.md)) and cannot read a `root`-owned `600` file. An unreadable
+  certificate key is a configuration error, so Caddy exits instead of
+  serving the other sites; `restart: unless-stopped` turns that into a loop.
+  Caddy is the only container with published ports, so from outside the
+  whole stack is down. Not noticed during the build because the `chown`
+  was typed by hand on 2026-09-18 and never written back into the README,
+  and not by the restore test because `restore.sh` unpacks the certificates
+  with `--numeric-owner` — the set carries the correct owner. The restore
+  test proved recovery from a backup, not a first install by someone else.
+- **Fix:** the `chown` and an `ls -ln` check are now part of "Deploying
+  certificates to the host" in [`pki/README.md`](../pki/README.md); Quick start step 4 names the
+  owner; [`proxy/README.md`](../proxy/README.md) has a pre-start check and an "If Caddy does not
+  start" section. Lesson: a manual step on the host is only done when it is
+  in the runbook — and a restore test does not replace a first install
+  from the documentation.
+
+## P-025 — First-install walkthrough on 2026-10-18: smaller gaps, bundled
+Found in the same walkthrough as [P-024](#p-024--caddy-restart-loop-on-a-first-install-the-key-files-belong-to-root); each one costs a stranger minutes,
+none stops the stack.
+- **Placeholder in a copy-paste block.** "Host preparation" contained
+  `git clone <this repository>`; pasted as a block, bash reads `<this` as an
+  input redirection (`this: No such file or directory`), the clone does not
+  happen and `bootstrap.sh` is "not found". The comment still named a deploy
+  key from the time the repository was private. Fix: the public HTTPS URL;
+  the deploy key is mentioned as the option for private forks.
+- **Expected bootstrap output undocumented.** Two `WARNING` lines (P-008),
+  three `gpg:` lines and about twelve `Old style watch rules are slower`
+  look like errors to a first-time reader. Fix: listed under "Host
+  preparation".
+- **Platform only stated under "Evaluating".** `bootstrap.sh` stops on
+  anything but Debian 13 amd64. Fix: one sentence in the Quick start
+  prerequisites.
+- **`restart caddy` before the first start.** The basic-auth block in
+  [`proxy/README.md`](../proxy/README.md) ends with a restart, but comes before "Start"; on a
+  first install it silently does nothing. Fix: "only if Caddy already runs".
+- **`docker logs caddy | tail` showed nothing.** Caddy logs to stderr. Fix:
+  `2>&1` in the command.
+- **`/etc/hosts` never checked.** The workstation still pointed at a deleted
+  host; every check with `curl --resolve` was green anyway. Fix:
+  `getent hosts` after the entry, and the reminder to update it on a
+  rebuild ([`pki/README.md`](../pki/README.md)).
+- **Restore: set left in `/tmp`, no transport check, empty `$EDITOR`.** The
+  encrypted copy stayed in `/tmp`; nothing compared it with the original
+  before `restore.sh` (which checks only the sums inside the decrypted set);
+  `$EDITOR` is unset on a fresh Debian account. Fix: `sha256sum` on both
+  sides, `rm` after `install`, `${EDITOR:-nano}` ([`docs/backup-restore.md`](backup-restore.md)).
+- **Open: [`pki/issue-cert.sh`](../pki/issue-cert.sh) after a wrong CA passphrase.** `openssl x509 -out`
+  creates the `.crt` before the passphrase is checked; `set -e` then stops
+  the script, leaving a 0-byte `.crt` and the `.csr`, and the next run
+  refuses with "already exists" (the guard tests `-e`, not `-s`). Workaround:
+  remove `<host>.crt`, `.csr` and `.key` from `issued/`. Fix candidate: sign
+  into a temporary file and `mv` on success, guard on `-s`.

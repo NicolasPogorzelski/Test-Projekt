@@ -101,8 +101,10 @@ account, SSH key, firewall) and `git clone` at the commit the set came from:
 ```
 sudo ./scripts/bootstrap.sh                    # packages, userns-remap, /srv layout, group backup, age
 rsync -a ~/backups/<host>/<stamp>.tar.age <new host>:/tmp/   # from the workstation
-sudo install -m 640 -g backup /tmp/<stamp>.tar.age /srv/backups/
-install -m 600 /dev/null ~/age.key && $EDITOR ~/age.key      # paste the identity from the password manager
+sha256sum ~/backups/<host>/<stamp>.tar.age                   # on the workstation ...
+sha256sum /tmp/<stamp>.tar.age                               # ... and on the new host: must be equal
+sudo install -m 640 -g backup /tmp/<stamp>.tar.age /srv/backups/ && rm /tmp/<stamp>.tar.age
+install -m 600 /dev/null ~/age.key && ${EDITOR:-nano} ~/age.key   # paste the identity from the password manager
 time sudo ./scripts/restore.sh /srv/backups/<stamp>.tar.age ~/age.key
 rm ~/age.key
 ```
