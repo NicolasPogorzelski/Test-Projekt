@@ -23,13 +23,20 @@ This repository was built as a practical assessment task in three days. Every
 design decision is recorded as an Architecture Decision Record in
 [`docs/adr/`](docs/adr/).
 
+> **Hand-in state:** tag [`v1.0-hand-in`](https://github.com/NicolasPogorzelski/Test-Projekt/tree/v1.0-hand-in)
+> (2026-09-20). Everything changed since — an installation guide tested by a
+> first-time reader, three script fixes, restructured documentation — is
+> listed in [`CHANGELOG.md`](CHANGELOG.md).
+
 **Proven, not claimed** (2026-09-20): a rebuilt VPS was back to a working system
 **21 minutes** after the first root login from one encrypted backup set
 ([protocol](docs/backup-restore.md#restore-test-protocol)); the security baseline
 was measured from outside — port scan, TLS, headers — and with the CIS Docker
 Benchmark, **12 → 44 of 117** after three fixes, every remaining finding
-classified ([verification](docs/security.md#verification)); 23 problems are
-recorded with root cause and fix ([problems](docs/problems.md)).
+classified ([verification](docs/security.md#verification)); 28 problems are
+recorded with root cause and fix ([problems](docs/problems.md)). On
+2026-10-19 the [installation guide](docs/install.md) was followed word for word
+on a fresh server, from an empty workstation to a decrypted backup.
 
 ## At a glance
 
@@ -106,48 +113,45 @@ flowchart LR
 ## Contents
 
 - [Repository layout](#repository-layout)
-- [Quick start](#quick-start)
+- [Installation](#installation)
 - [Evaluating this repository](#evaluating-this-repository)
 - [Documentation](#documentation)
-- [Runbook](#runbook): [workstation](#workstation-setup) · [host](#host-preparation) · [first start](#first-start-of-the-stacks) · [backup and restore](#backup-and-restore) · [certificates](#certificate-renewal-yearly) · [upgrades](#upgrades) · [project onboarding](#project-onboarding) · [users](#on--and-offboarding) · [secrets](#secrets-rotation)
+- [Operations](#operations): [workstation](#workstation-setup) · [backup and restore](#backup-and-restore) · [certificates](#certificate-renewal-yearly) · [upgrades](#upgrades) · [project onboarding](#project-onboarding) · [users](#on--and-offboarding) · [secrets](#secrets-rotation)
 - [Tooling and use of AI assistance](#tooling-and-use-of-ai-assistance)
 - [License](#license)
 
 ## Repository layout
 
 ```
-docs/            architecture, security, integration, backup/restore, problems, ADRs
+docs/            install guide, architecture, security, integration, backup/restore, problems, ADRs
 pki/             scripts to create the private CA and issue service certificates; ca.crt
 proxy/           Caddy compose stack and Caddyfile
 services/        one compose stack per service: gitlab, xwiki, openproject, lldap
 scripts/         bootstrap.sh (host preparation), backup.sh, restore.sh, git pre-commit hook
 .github/         CI: shellcheck, yamllint, compose validation, gitleaks over the history
-.env.example     all environment variables with placeholders
+.env.example     every environment variable, with its purpose
+CHANGELOG.md     changes since the hand-in
 LICENSE          MIT
 ```
 
-## Quick start
+## Installation
 
-> Full runbook: see below. Prerequisites: a Debian 13 (amd64) host with a public IP, a
-> workstation with `openssl`, `ssh` and `git`. Other distributions and Docker
-> Desktop are not supported by `bootstrap.sh` — see "Evaluating this repository".
+**[`docs/install.md`](docs/install.md)** — one linear path from an empty
+workstation and an empty server to a working system: server and firewall,
+your own CA and certificates, host preparation with `bootstrap.sh`, the five
+stacks with LDAP sign-in, and a first backup that is decrypted again. Every
+command is marked with the machine it runs on and followed by its expected
+output.
 
-1. **Workstation:** clone this repository, create the CA and the service
-   certificates ([`pki/make-ca.sh`](pki/make-ca.sh), [`pki/issue-cert.sh`](pki/issue-cert.sh) — see
-   [`pki/README.md`](pki/README.md)), add the `*.lab.test` names to
-   `/etc/hosts`, import [`pki/ca.crt`](pki/ca.crt) into your browser and verify its
-   fingerprint:
-   `SHA256 A7:08:31:80:94:29:B9:64:81:47:C3:83:9F:D3:55:04:AE:37:06:FD:81:9A:0D:AB:A7:9B:3E:3D:38:97:49:B0`
-2. **Host:** create the admin user (see "Host preparation" below), clone this
-   repository and run `sudo ./scripts/bootstrap.sh` from that account (sshd
-   hardening, Docker CE with `userns-remap`, apt pin, sudoers rule, `/srv`,
-   Docker networks — see [`scripts/README.md`](scripts/README.md)).
-3. Copy [`.env.example`](.env.example) to `.env` in each stack directory and fill in secrets.
-4. Copy the service certificates to `/srv/proxy/certs/` and give the keys to
-   UID `101000` ([`pki/README.md`](pki/README.md), "Deploying certificates to the host") —
-   otherwise Caddy does not start ([P-024](docs/problems.md#p-024--caddy-restart-loop-on-a-first-install-the-key-files-belong-to-root)).
-5. Start the stacks in this order: `proxy`, `lldap`, `gitlab`, `openproject`, `xwiki`.
-6. Configure LDAP in each service and the integrations ([`docs/integration.md`](docs/integration.md)).
+Prerequisites: a Debian 13 (amd64) server with a public IPv4 (8 vCPU /
+16 GB RAM), a Linux workstation with `openssl`, `ssh`, `git`, `curl`, `age`
+and Docker or Podman. Time: about two hours, most of it image pulls and the
+first start of GitLab; secrets and directory contents are created by hand on
+purpose, not by scripts in the repository.
+
+The stack READMEs ([`pki/`](pki/README.md), [`proxy/`](proxy/README.md),
+[`services/*/`](services/)) are the reference for each part — what it is, why
+it is configured that way, how to verify and operate it.
 
 ## Evaluating this repository
 
@@ -160,11 +164,7 @@ Three ways, from cheapest to most complete:
    and the measured restore test — a rebuilt VPS back to a working system in
    21 minutes — in [`docs/backup-restore.md`](docs/backup-restore.md).
 2. **Reproduce on a fresh Debian 13 host** (cloud VPS with 8 vCPU / 16 GB,
-   about 0.13 EUR/h at the provider used here): the "Quick start" above.
-   `bootstrap.sh` prepares the host in about two minutes; the first start of
-   all five stacks including the LDAP set-up takes one to two hours because
-   secrets and directory contents are deliberately created by hand, not by
-   scripts in the repository.
+   about 0.13 EUR/h at the provider used here): [`docs/install.md`](docs/install.md).
 3. **Run it elsewhere.** The supported target is Debian 13 — physical,
    virtual or cloud. On macOS or Windows, use a Debian 13 VM (Multipass, UTM,
    Hyper-V; 16 GB RAM for the VM) and follow the same path; Docker Desktop is
@@ -178,14 +178,16 @@ Three ways, from cheapest to most complete:
 
 ## Documentation
 
+- [Installation](docs/install.md) — the one path from empty machines to a working, backed-up system
 - [Architecture](docs/architecture.md) — components, networks, data flows, threat model
 - [Security](docs/security.md) — measures, rationale, ISO 27001 mapping
 - [Integration](docs/integration.md) — shared identity (LDAP), GitLab → OpenProject webhook, XWiki as the documentation hub, what is not built and why
 - [Backup & restore](docs/backup-restore.md) — what is in a set, procedures, the measured restore test
-- [Problems & peculiarities](docs/problems.md) — 23 entries, each symptom → verification → cause → fix
+- [Problems & peculiarities](docs/problems.md) — 28 entries, each symptom → verification → cause → fix
 - [Architecture Decision Records](docs/adr/) — 14 decisions with alternatives; [index](docs/adr/README.md)
+- [Changelog](CHANGELOG.md) — what changed after the hand-in
 
-## Runbook
+## Operations
 
 ### Workstation setup
 
@@ -206,67 +208,21 @@ run the same check over the whole tree:
 `grep -rniE -f ~/path/to/sanitize-patterns --exclude-dir=.git .` (no output =
 clean).
 
-### Host preparation
-
-Prerequisites outside the repository: a Debian 13 (trixie) cloud server and a
-provider firewall that allows inbound TCP 22, 80, 443 and 2222 only.
-
-**First login as root** (once, via the provider's root key). Create the admin
-account and hand it the SSH key; everything else is done by `bootstrap.sh`.
-Use a lower-case username ([`docs/problems.md`](docs/problems.md) [P-003](docs/problems.md#p-003--deluser---remove-home-fails-on-the-minimal-debian-image)).
-
-```
-adduser --gecos "" <admin>                 # asks for a password: this is the sudo password
-usermod -aG sudo <admin>
-install -d -m 700 -o <admin> -g <admin> /home/<admin>/.ssh
-install -m 600 -o <admin> -g <admin> /root/.ssh/authorized_keys /home/<admin>/.ssh/authorized_keys
-exit
-```
-
-Log in as `<admin>` (verify that this works before the next step — the script
-disables root and password logins), then:
-
-```
-sudo apt-get update && sudo apt-get install -y git   # the cloud image ships without git (P-015)
-git clone https://github.com/NicolasPogorzelski/Test-Projekt.git ~/Test-Projekt
-sudo ~/Test-Projekt/scripts/bootstrap.sh
-```
-For a private fork, clone with a read-only deploy key instead
-([`docs/security.md`](docs/security.md)).
-
-Expected in the `bootstrap.sh` output besides the `==>` steps: two `WARNING`
-lines about `/etc/subuid` and `/etc/subgid` sharing the range at 100000
-(accepted, [P-008](docs/problems.md#p-008--dockremap-received-the-same-subordinate-range-as-the-admin-user)), three `gpg:` lines creating root's keyring (the script
-checks the fingerprint of Docker's apt key), and about a dozen `Old style
-watch rules are slower` from `augenrules` (informational). Anything that is not `PASS` in the self-test at
-the end is a failure.
-
-The script is idempotent: run it again after any manual change on the host to
-make sure the baseline still holds; the self-test at the end must show only
-`PASS`. Details: [`scripts/README.md`](scripts/README.md).
-
-### First start of the stacks
-
-In this order, each README has the exact steps: [`proxy/`](proxy/README.md)
-(certificates from [`pki/`](pki), Caddy) → [`services/lldap/`](services/lldap/README.md)
-(directory, groups, service accounts) → [`services/gitlab/`](services/gitlab/README.md)
-→ [`services/openproject/`](services/openproject/README.md) →
-[`services/xwiki/`](services/xwiki/README.md). LDAP wiring per product:
-[`docs/integration.md`](docs/integration.md).
-
 ### Backup and restore
 
 `sudo ./scripts/backup.sh` writes one encrypted set to `/srv/backups/`; the
 timer installed by `bootstrap.sh` runs it nightly. Pull the sets to the
-workstation with `rsync` (the admin is in group `backup`). Reinstall = host
-preparation above → `bootstrap.sh` → copy a set and the age identity →
-`sudo ./scripts/restore.sh <set>.tar.age <identity>`. Procedure, guards and the
+workstation with `rsync` (the admin is in group `backup`). Reinstall =
+[`docs/install.md`](docs/install.md) sections 1 and 3 → `bootstrap.sh` → copy a
+set and the age identity → `sudo ./scripts/restore.sh <set>.tar.age <identity>`;
+the CA comes from the set. Procedure, guards and the
 measured restore test: [`docs/backup-restore.md`](docs/backup-restore.md).
 
 ### Certificate renewal (yearly)
 
 [`pki/README.md`](pki/README.md), "Renewal runbook": issue new leaf certificates with
-`issue-cert.sh`, copy them to `/srv/proxy/certs`, restart Caddy; for XWiki
+`issue-cert.sh`, copy them to `/srv/proxy/certs` (keys to owner `101000`),
+restart Caddy; for XWiki
 rebuild `/srv/xwiki/cacerts` only if the **CA** changed (the leaf does not
 matter to the JVM). The certificates are part of every backup set.
 
@@ -319,7 +275,16 @@ line by line by the author, following the official documentation and the
 assistant's guidance; every line and every decision recorded in the ADRs can be
 explained by the author. Documentation drafts were reviewed before each commit.
 No credentials or private keys were ever shared with the assistant, and every
-commit was made by the author.
+commit up to the hand-in was made by the author.
+
+After the hand-in (October 2026) the way of working changed, and this
+paragraph says so: the author walked through a fresh installation by hand;
+the assistant followed along with read-only access to that short-lived test
+server, recorded every hesitation and deviation, and then wrote and committed
+the changes listed in [`CHANGELOG.md`](CHANGELOG.md) — the installation guide,
+the restructured READMEs and the script fixes — on a branch. The author
+reviewed each change before merging it. The test server used throw-away
+credentials and was deleted afterwards.
 
 ## License
 
