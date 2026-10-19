@@ -152,8 +152,12 @@ restore_host_artifacts() {
     untar "$SET/proxy/config.tar.gz" "$SRV/proxy"
     untar "$SET/proxy/data.tar.gz"   "$SRV/proxy"
     install -m 644 -o root -g root "$SET/xwiki/cacerts" "$SRV/xwiki/cacerts"
-    # not in the set, comes from the repo: GitLab trusts the lab CA via trusted-certs (P-010)
-    install -m 644 -o "$REMAP_BASE" -g "$REMAP_BASE" "$REPO/pki/ca.crt" "$SRV/gitlab/config/trusted-certs/ca.crt"
+    # The CA that signed the restored certificates is in the set (proxy/certs/ca.crt). A fresh
+    # clone's pki/ca.crt is the reference build's CA, so the clone gets the one from the set:
+    # OpenProject mounts it and verify() checks against it. GitLab trusts it via trusted-certs (P-010).
+    [[ -f "$SRV/proxy/certs/ca.crt" ]] || die "set has no proxy/certs/ca.crt - cannot tell which CA signed the certificates"
+    install -m 644 -o "$ADMIN_USER" -g "$ADMIN_USER" "$SRV/proxy/certs/ca.crt" "$REPO/pki/ca.crt"
+    install -m 644 -o "$REMAP_BASE" -g "$REMAP_BASE" "$SRV/proxy/certs/ca.crt" "$SRV/gitlab/config/trusted-certs/ca.crt"
 }
 
 restore_lldap() {
