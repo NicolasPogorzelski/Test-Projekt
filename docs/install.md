@@ -1032,16 +1032,79 @@ another key (4.1). The downloaded file holds every secret of the
 installation — delete it when the test is done. Restore:
 [`docs/backup-restore.md`](backup-restore.md).
 
-## 6–8. Not yet written
-
 At this point all services run, accept LDAP sign-in with group filtering,
-and the backup can be decrypted. Still to be added to this guide (until
-then, see the linked documents):
+and the backup can be decrypted. Sections 6 to 8 were built and verified on
+the reference build on 2026-09-20 ([`integration.md`](integration.md),
+[`backup-restore.md`](backup-restore.md)) but have **not** yet been walked
+through with this guide — *not re-verified*.
 
-- Integrations GitLab ↔ OpenProject ([`docs/integration.md`](integration.md)).
-- Acceptance checks across all services and the verification blocks of each
-  README (including SSH on 2222).
-- A restore test ([`docs/backup-restore.md`](backup-restore.md)).
+## 6. Integrations
+
+Why each one exists and what was deliberately not built:
+[`integration.md`](integration.md). Security decisions behind the webhook:
+[ADR-0014](adr/0014-gitlab-openproject-webhook.md).
+
+### 6.1 GitLab → OpenProject: webhook
+
+A merge request or commit that mentions `OP#<id>` appears on that work
+package in OpenProject, tab *GitLab*. In this order:
+
+1. **OpenProject**, as `admin`: a new role `GitLab Integration` with the
+   three permissions *Show GitLab content*, *View work packages*, *Add
+   comments*; a local user `gitlab-integration` (not from LDAP, no admin). In
+   the project: module *GitLab* on (the default from 5.13), add the user as
+   member with that role. Sign in as that user and create an API token in
+   the account settings; store it.
+2. **GitLab**, as `root` in admin mode: Admin → Settings → Network →
+   Outbound requests: *Allow requests to the local network* **off**, allowlist
+   `pm.lab.test` and `wiki.lab.test`, DNS-rebinding protection on.
+3. **GitLab project** → Settings → Webhooks: URL
+   `https://pm.lab.test/webhooks/gitlab?key=<token>`, events push, comments,
+   work items, merge requests, pipelines; SSL verification **on** (GitLab
+   trusts your CA since 5.9). *Test* → push events: `HTTP 200`.
+
+Check: a merge request with `OP#<id>` in title and description shows up on
+the work package, tab *GitLab*. Every delivery answering `200` and nothing
+linked means a missing permission of the role
+([P-018](problems.md#p-018--webhook-answered-200-on-every-delivery-and-linked-nothing)).
+
+### 6.2 XWiki as the documentation hub
+
+- **GitLab → XWiki:** Admin → Settings → Integrations → *External wiki*:
+  `https://wiki.lab.test/bin/view/Projects/` (inherited by every project);
+  per project, disable the built-in wiki (Settings → General → Visibility).
+  Saving fails with "Requests to the local network are not allowed" until
+  `wiki.lab.test` is in the allowlist from 6.1
+  ([P-021](problems.md#p-021--gitlab-refuses-the-external-wiki-url-requests-to-the-local-network-are-not-allowed)).
+- **OpenProject → XWiki:** Administration → Projects → Project attributes →
+  new attribute `Documentation`, type *Link*; set it per project to the
+  XWiki page.
+- **XWiki → GitLab, OpenProject:** a page `Projects/<name>` per project with
+  links to the repository and the work packages.
+
+New projects later: README, "Project onboarding".
+
+## 7. Acceptance checks
+
+Each stack README ends with a *Verification* block — the commands with their
+expected results in brackets, run on the host:
+[`proxy`](../proxy/README.md#hardening-summary),
+[`lldap`](../services/lldap/README.md#verification),
+[`gitlab`](../services/gitlab/README.md#verification-evidence-for-docssecuritymd),
+[`openproject`](../services/openproject/README.md#verification-evidence-for-docssecuritymd),
+[`xwiki`](../services/xwiki/README.md#verification-evidence-for-docssecuritymd).
+From outside — open ports, TLS, headers, the CIS Docker Benchmark:
+[`security.md`](security.md#verification). Git over SSH on port 2222:
+[`services/gitlab/README.md`](../services/gitlab/README.md#workstation-access-to-git).
+
+## 8. Restore test
+
+A backup counts only once it has been restored. On a **second** fresh server
+(the first one keeps running for comparison): sections 1 and 3 of this guide,
+then `bootstrap.sh`, copy a set and the identity, `restore.sh` —
+[`backup-restore.md`](backup-restore.md#restore-procedure), with the
+functional checklist afterwards. The reference build measured 21 minutes from
+the first root login to a working system.
 
 ## 9. Access from another workstation
 
