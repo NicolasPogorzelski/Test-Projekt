@@ -1,10 +1,9 @@
 # Installation — from an empty workstation and an empty server to a working system
 
-One linear path, top to bottom. The steps were walked through on a fresh
-Debian 13 server and a workstation without any prior state (October 2026);
-the few that were not re-run on that build are marked *not re-verified*.
-Commands that run on the **workstation** and on the **host** are marked as
-such.
+One linear path, top to bottom. On 2026-10-19 the whole guide (sections 1 to
+5.16) was followed literally on a fresh Debian 13 server and a workstation
+without any prior state; the few steps not exercised in that run are marked
+*not re-verified*.
 
 This guide was written after a second build from scratch and corrects the
 stack READMEs where they differ. Where a linked README says something else,
@@ -15,28 +14,64 @@ stack READMEs where they differ. Where a linked README says something else,
 | `services/gitlab/README.md`, `services/xwiki/README.md` | install `~/Test-Projekt/pki/ca.crt` on the host | that file is the reference build's CA until 5.2 replaces it; this guide uses your CA |
 | `pki/README.md` | `scp … lab:~/certs-upload/`, then `install` the keys | create the directory first, and `chown 101000` the keys (5.1, 5.2) |
 | `proxy/README.md` | checks with `curl --resolve` | without `--resolve`, so `/etc/hosts` is tested too (5.6) |
-| `services/xwiki/README.md` | activate the LDAP authenticator, then fill the form | fill the form first (5.15) — the other order can lock everyone out |
-| `services/openproject/README.md` | Authentication → *LDAP authentication* | Authentication → **LDAP connections** (OpenProject 16.6) |
-| `services/openproject/README.md` | `compose ps` shows the seeder | only `compose ps -a` does |
-| `services/lldap/README.md` | every service-account password goes into its stack's `.env` | only GitLab's; OpenProject and XWiki take it in their admin UI |
 | `proxy/README.md` | `caddy validate` as shown | needs a placeholder auth file (5.3) |
 | `proxy/README.md` | `docker logs caddy \| tail` | `docker logs caddy 2>&1 \| tail` (5.5) |
+| `services/lldap/README.md` | every service-account password goes into its stack's `.env` | only GitLab's; OpenProject and XWiki take it in their admin UI |
+| `services/openproject/README.md` | Authentication → *LDAP authentication* | Authentication → **LDAP connections** (OpenProject 16.6) |
+| `services/openproject/README.md` | self-registration under *Users and permissions → Settings*; check *Protocol* under *System settings* | Authentication → **Login and registration**; there is no *Protocol* field — `compose.yaml` sets HTTPS (5.13) |
+| `services/openproject/README.md` | `compose ps` shows the seeder | only `compose ps -a` does |
+| `services/xwiki/README.md` | activate the LDAP authenticator, then fill the form | fill the form first (5.15) — the other order can lock everyone out |
 | `scripts/backup-recipients.txt` | — | holds the reference build's key; replace it (4.1) |
 
-Placeholders: `<server-ip>` is the public IPv4 of the host, `<admin>` the
-admin account you create on it, `<your-key>` the file name of your SSH
-private key in `~/.ssh/`.
+## How to read this guide
+
+- **In order.** Each section needs the ones before it — section 3 needs the
+  server from section 1.
+- **Where a command runs.** Every code block starts with a comment line,
+  `# workstation` or `# host`. Check your prompt before you run the block —
+  the commands of both machines look alike, and several of them fail
+  silently or do harm on the wrong one (a backup key created on the server it
+  protects).
+- **Placeholders** are written in angle brackets; replace them *including*
+  the brackets. Typed literally, the shell reads `<` as an input redirection
+  (`<stamp>` ends in `stamp: No such file or directory`).
+
+  | Placeholder | Meaning |
+  |---|---|
+  | `<server-ip>` | public IPv4 of the host (section 1) |
+  | `<your-key>` | file name of your SSH **private** key in `~/.ssh/` (the `.pub` file is its public half) |
+  | `<admin>` | the admin account you create on the host (3.2) |
+  | `<your-age-public-key>` | the `age1…` string from 4.1 |
+  | `<username>` | a name you pick for the basic-auth gate (5.4) |
+  | `<stamp>` | the time stamp of a backup set, e.g. `20261019T162135Z` (5.16) |
+
+- **Copying commands.** Read the guide on GitHub or with `less`. Terminal
+  Markdown viewers such as `glow` wrap long lines by default; a pasted line
+  break splits one command into two (`glow -w 0` turns wrapping off).
+- **Expected output** follows each block. Compare before you move on.
 
 ## 1. Server and provider firewall
 
 Outside the repository, at your cloud provider (the reference build used a
-Hetzner Cloud CPX42, see [ADR-0001](adr/0001-hosting.md)):
+Hetzner Cloud CPX42, see [ADR-0001](adr/0001-hosting.md)). If you have no SSH
+key pair for this server yet, create one first:
+
+```
+# workstation
+ssh-keygen -t ed25519 -f ~/.ssh/<your-key>
+cat ~/.ssh/<your-key>.pub
+```
+
+`ssh-keygen` writes two files: `~/.ssh/<your-key>` (private — it never leaves
+the workstation) and `~/.ssh/<your-key>.pub` (public). `cat` prints the
+public key as one line, `ssh-ed25519 AAAA… user@host`; that line is what the
+provider gets.
 
 | Setting | Value | Why |
 |---|---|---|
 | Image | Debian 13 (trixie), amd64 | `bootstrap.sh` targets Debian 13 only |
 | Size | 8 vCPU / 16 GB RAM | GitLab and OpenProject together need the memory |
-| SSH key | your public key, selected at creation (none yet: `ssh-keygen -t ed25519 -f ~/.ssh/<your-key>` on the workstation) | the first login as root uses it; without it the provider mails a root password instead |
+| SSH key | paste the `.pub` line, then **select** the key for this server | the first login as root uses it; a key that is stored but not selected is not installed, and the provider mails a root password instead |
 | Firewall | inbound TCP 22, 80, 443, 2222 only, attached to the server | everything else stays closed; 2222 is GitLab's SSH |
 
 Note the server's public IPv4 — it is `<server-ip>` below.
@@ -46,22 +81,41 @@ Note the server's public IPv4 — it is `<server-ip>` below.
 ### 2.1 Prerequisites
 
 `openssl`, `ssh`, `git`, `curl`, `age` (backup key, section 4) and a
-container runtime (`podman` or `docker`, for the syntax check in 5.3). Check
-that they are installed:
+container runtime for the syntax check in 5.3 — `docker` (the host runs
+Docker too) or `podman`, the commands are the same. Check that they are
+installed:
 
 ```
+# workstation
 openssl version
 ssh -V
 git --version
 curl --version
 age --version
-podman --version          # or: docker --version
+docker --version          # or: podman --version
 ```
 
-Git needs an identity for the push test in 5.12; set it once if
-`git config --global user.name` prints nothing:
+Install whatever is missing:
+
+| System | Command |
+|---|---|
+| Debian, Ubuntu | `sudo apt install openssl openssh-client git curl age docker.io` |
+| Fedora | `sudo dnf install openssl openssh-clients git curl age podman` |
+| Fedora Atomic (Silverblue, Bazzite, …) | everything except `age` is in the image: `brew install age` (or `rpm-ostree install age` and reboot) |
+
+Git needs an identity for the push test in 5.12 — name and e-mail written
+into each commit, not an account or a password. Check it:
 
 ```
+# workstation
+git config --global user.name
+git config --global user.email
+```
+
+If either prints nothing, set it once:
+
+```
+# workstation
 git config --global user.name "<your name>"
 git config --global user.email "<your e-mail>"
 ```
@@ -69,6 +123,7 @@ git config --global user.email "<your e-mail>"
 ### 2.2 Clone the repository
 
 ```
+# workstation
 git clone https://github.com/NicolasPogorzelski/Test-Projekt.git ~/Test-Projekt
 git -C ~/Test-Projekt log --oneline -1
 ```
@@ -79,15 +134,20 @@ repository root (`cd ~/Test-Projekt`).
 ### 2.3 Create your own root CA
 
 ```
+# workstation
 cd ~/Test-Projekt
 ./pki/make-ca.sh
 ```
 
 The script asks three times for a passphrase: twice to set it on the new CA
-key, once more to sign the CA certificate with it. Store it in a password
-manager — every certificate issued later needs it. The private material goes
-to `~/lab-pki/` (override with `PKI_DIR=<dir>`); the script refuses to run if
-a CA key already exists there. Details of each `openssl` call:
+key, once more to sign the CA certificate with it. Choose it beforehand and
+store it in a password manager — every certificate issued later needs it,
+and anyone holding `ca.key` plus the passphrase can issue certificates your
+browser trusts. OpenSSL wants at least four characters; a shorter one stops
+the script with `You must type in 4 to 1024 characters` before anything is
+written, and you simply run it again. The private material goes to
+`~/lab-pki/` (override with `PKI_DIR=<dir>`); the script refuses to run if a
+CA key already exists there. Details of each `openssl` call:
 [`pki/README.md`](../pki/README.md#make-cash--create-the-root-ca-run-once).
 
 Expected: `subject=CN=lab.test Root CA, O=lab.test`, a validity of ten years
@@ -104,6 +164,7 @@ One per service, with the full hostname. Each call asks once for the CA
 passphrase:
 
 ```
+# workstation
 ./pki/issue-cert.sh git.lab.test
 ./pki/issue-cert.sh wiki.lab.test
 ./pki/issue-cert.sh pm.lab.test
@@ -123,32 +184,48 @@ again.
 ### 2.5 Trust the CA in your browser
 
 Import **your** `pki/ca.crt` (the one `make-ca.sh` just wrote) as an authority
-that identifies websites. Firefox and Firefox-based browsers: Settings →
-search for "cert" → View/Manage Certificates → Authorities → Import → tick
-"Trust this CA to identify websites". Chrome: Settings → Privacy and security
-→ Security → Manage certificates → Authorities → Import. Browsers installed as
-Flatpak ignore the system trust store, so import in the browser even if you
-also add the CA system-wide ([P-001](problems.md#p-001--flatpak-browsers-do-not-use-the-system-ca-trust-store)).
+that identifies websites:
+
+- Firefox and Firefox-based browsers: Settings → search for "cert" →
+  View/Manage Certificates → Authorities → Import → tick "Trust this CA to
+  identify websites".
+- Chrome and Chromium-based browsers (Brave, Edge): Settings → Privacy and
+  security → Security → Manage certificates, then import it as a trusted
+  authority (the tab is *Authorities* in older versions; the menu names have
+  changed between versions — *not re-verified*).
+
+Browsers installed as Flatpak ignore the system trust store, so import in the
+browser even if you also add the CA system-wide
+([P-001](problems.md#p-001--flatpak-browsers-do-not-use-the-system-ca-trust-store)).
 
 Then open the imported entry ("lab.test Root CA") and compare its SHA-256
 fingerprint with the one `make-ca.sh` printed in 2.3. If you imported a CA of
 an earlier build before, several entries carry the same name — the
-fingerprint tells them apart.
+fingerprint tells them apart. The check that the browser really uses it
+follows in 5.6.
 
 ### 2.6 Name resolution
 
-The `*.lab.test` names exist in no public DNS. Add one line to `/etc/hosts`
-on the workstation (as root, e.g. `sudoedit /etc/hosts`):
+The `*.lab.test` names exist in no public DNS. `/etc/hosts` on the
+workstation needs **exactly one** line for them:
 
 ```
 <server-ip>  git.lab.test wiki.lab.test pm.lab.test ldap.lab.test
 ```
 
-Check it — it must print `<server-ip>`:
+Edit the file as root with `sudoedit /etc/hosts` (it opens the editor from
+`$EDITOR`, often nano: save with Ctrl+O and Enter, leave with Ctrl+X). If a
+line for these names is already there from an earlier build, change its
+address or put a `#` in front of it — an old line further up wins, because
+the first match counts.
 
 ```
+# workstation
 getent hosts git.lab.test
 ```
+
+Expected: **one** line, starting with `<server-ip>`. Two lines mean an old
+entry is still active.
 
 Update this line whenever the host is rebuilt with a new address. Checks that
 use `curl --resolve` bypass `/etc/hosts` and stay green while the browser
@@ -159,23 +236,35 @@ still goes to the old address.
 ### 3.1 First login as root
 
 The provider placed your public key in `/root/.ssh/authorized_keys` when the
-server was created:
+server was created. Compare the address with the provider's console before
+you press Enter — a typo connects you to somebody else's machine:
 
 ```
+# workstation
 ssh -o IdentitiesOnly=yes -i ~/.ssh/<your-key> root@<server-ip>
 ```
 
 On the first connection SSH shows the server's host-key fingerprint and asks
-whether to continue. To compare it out of band, run
-`ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` in the provider's web
-console; in a lab, accepting it right after creating the server is a
-reasonable shortcut.
+whether to continue. Before answering `yes`, open the provider's web console
+of this server and run
+
+```
+# host, in the provider's web console
+ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub
+```
+
+The `SHA256:…` value must be the one SSH shows. Expected after `yes`: a root
+prompt **without** a password question. A password question means a wrong
+address or a key that was not selected in section 1 — leave with Ctrl+C and
+never type a password there. If you accepted the key of a wrong address,
+remove it again: `ssh-keygen -R <that address>`.
 
 ### 3.2 Create the admin account (on the host, as root)
 
 Lower-case username ([P-003](problems.md#p-003--deluser---remove-home-fails-on-the-minimal-debian-image)):
 
 ```
+# host, as root
 adduser --gecos "" <admin>                 # the password you set here is the sudo password
 usermod -aG sudo <admin>
 install -d -m 700 -o <admin> -g <admin> /home/<admin>/.ssh
@@ -186,21 +275,29 @@ exit
 `adduser` ends with `usermod: no changes` — harmless, it comes from adduser's
 own internal call. The account can now log in with the same key as root.
 
-### 3.3 Log in as the admin and check sudo
+### 3.3 Log in as the admin, check sudo, create the `lab` alias
 
 `bootstrap.sh` disables root and password logins. Before running it, make sure
 the admin account works — including sudo:
 
 ```
+# workstation
 ssh -o IdentitiesOnly=yes -i ~/.ssh/<your-key> <admin>@<server-ip>
+```
+
+```
+# host
 sudo -v                                     # asks for the password from 3.2; no output = OK
+exit
 ```
 
 `IdentitiesOnly=yes` makes SSH offer only this key. After `bootstrap.sh` the
 server allows three attempts per connection (`MaxAuthTries 3`); an SSH agent
 holding several keys can use them up before the right one is tried and the
-login ends with "Too many authentication failures". A block in
-`~/.ssh/config` saves typing:
+login ends with "Too many authentication failures".
+
+**Create the alias now** — the rest of the guide uses `lab`. Append this block
+to `~/.ssh/config` on the workstation, with your values:
 
 ```
 Host lab
@@ -210,11 +307,22 @@ Host lab
     IdentitiesOnly yes
 ```
 
-### 3.4 Install git and clone the repository
-
-The cloud image ships without git ([P-015](problems.md#p-015--the-debian-13-cloud-image-has-no-git-but-the-reinstall-path-starts-with-git-clone)):
+`IdentityFile` is the **private** key (the file without `.pub`). Check:
 
 ```
+# workstation
+ssh lab true && echo ok
+```
+
+Expected: `ok`, no password question.
+
+### 3.4 Install git and clone the repository
+
+The cloud image ships without git ([P-015](problems.md#p-015--the-debian-13-cloud-image-has-no-git-but-the-reinstall-path-starts-with-git-clone)).
+Log in with `ssh lab`, then:
+
+```
+# host
 sudo apt-get update && sudo apt-get install -y git
 git clone https://github.com/NicolasPogorzelski/Test-Projekt.git ~/Test-Projekt
 ```
@@ -228,6 +336,7 @@ On the host, as the admin (not as root — the script reads `SUDO_USER` and
 allows only that account in `AllowUsers`):
 
 ```
+# host
 sudo ~/Test-Projekt/scripts/bootstrap.sh 2>&1 | tee ~/bootstrap.log
 echo "exit: ${PIPESTATUS[0]}"
 ```
@@ -246,11 +355,13 @@ Expected: a self-test block with only `PASS` lines, then `==> done` and
 | `Old style watch rules are slower` (12×) | `auditctl` notice for file-watch rules; the rules are loaded |
 | `added <admin> to group backup (re-login required)` | the group applies from the next login |
 
-Keep this session open and check from a **second** terminal that the admin
-can still log in and root cannot:
+The script has just rewritten the SSH configuration. **Keep this session
+open** — if the admin can no longer log in, it is the only way left to repair
+that — and check from a **second** terminal on the workstation:
 
 ```
-ssh -o IdentitiesOnly=yes -i ~/.ssh/<your-key> <admin>@<server-ip> true && echo "admin ok"
+# workstation
+ssh lab true && echo "admin ok"
 ssh -o IdentitiesOnly=yes -i ~/.ssh/<your-key> root@<server-ip> true      # Permission denied (publickey)
 ```
 
@@ -261,24 +372,29 @@ Then log out and in again so the `backup` group takes effect.
 `bootstrap.sh` already enabled the nightly `backup.timer`. `backup.sh`
 encrypts every set to the public keys in `scripts/backup-recipients.txt` —
 in a fresh clone that is the key of the reference build, so you could not
-decrypt your own backups. Replace it before the first night. On the
-**workstation**:
+decrypt your own backups. Replace it before the first night.
+
+The private half stays on the **workstation** — on the host it would sit next
+to the backups it is meant to protect:
 
 ```
+# workstation
 age-keygen -o ~/lab-pki/backup-identity.txt      # prints "Public key: age1…"
 chmod 600 ~/lab-pki/backup-identity.txt
 ```
 
 The identity file is the only way to decrypt a backup — keep a copy in the
-password manager. On the **host**, replace the recipient with your public key:
+password manager. Then replace the recipient with your public key:
 
 ```
+# host
 echo '<your-age-public-key>' > ~/Test-Projekt/scripts/backup-recipients.txt
+cat ~/Test-Projekt/scripts/backup-recipients.txt
 ```
 
-Replace the placeholder with the full `age1…` string `age-keygen` printed —
-a placeholder left in the file makes every backup fail at the last step with
-`malformed recipient at line 1`.
+Expected: one line, your `age1…` key. `>` replaces the file (`>>` would keep
+the reference key as a second recipient). A placeholder left in the file
+makes every backup fail at the last step with `malformed recipient at line 1`.
 
 This edit — like the CA copy in 5.2 — exists only in the host's clone. A
 reinstall from a fresh clone brings back the reference build's key and CA
@@ -287,23 +403,7 @@ re-apply both files after every `git clone` (or commit them to your own
 fork).
 
 Until every stack has its `.env` (5.14), the nightly run stops with `missing
-…/.env` — expected. **After 5.15**, test the key once — start a backup on the
-host, then fetch and decrypt it on the workstation:
-
-```
-sudo systemctl start backup.service                                   # host; stacks pause briefly
-sudo journalctl -u backup.service --since '-5 min' --no-pager | tail -5   # host: "==> done"
-ls /srv/backups/                                                      # host: <stamp>.tar.age, e.g. 20261019T111335Z
-scp lab:/srv/backups/<stamp>.tar.age . && age -d -i ~/lab-pki/backup-identity.txt <stamp>.tar.age | tar -t   # workstation
-```
-
-`lab` is the SSH alias from 3.3 (without it:
-`scp -o IdentitiesOnly=yes -i ~/.ssh/<your-key> <admin>@<server-ip>:/srv/backups/…`).
-`tar -t` lists the set (`<stamp>/env/…`, `<stamp>/gitlab/…`, …) without
-unpacking it. If encryption fails, `backup.sh` leaves the **unencrypted** set
-`/srv/backups/<stamp>/` behind — delete it with
-`sudo rm -rf /srv/backups/<stamp>` after fixing the cause. Details:
-[`docs/backup-restore.md`](backup-restore.md).
+…/.env` — expected. The key is tested in 5.16, once all stacks run.
 
 ## 5. Stacks
 
@@ -320,10 +420,8 @@ initialised on the first start.
 
 ### 5.1 Copy the certificates to the host
 
-On the **workstation** (`lab` = the `~/.ssh/config` block from 3.3; without
-it, use `-o IdentitiesOnly=yes -i ~/.ssh/<your-key> <admin>@<server-ip>`):
-
 ```
+# workstation
 ssh lab 'mkdir -m 700 ~/certs-upload'
 scp ~/lab-pki/issued/*.crt ~/lab-pki/issued/*.key ~/lab-pki/ca.crt lab:~/certs-upload/
 ```
@@ -333,6 +431,7 @@ Nine files: four certificates, four keys, the CA certificate.
 ### 5.2 Install the certificates (on the host)
 
 ```
+# host
 sudo install -m 644 -o root -g root ~/certs-upload/*.crt /srv/proxy/certs/
 sudo install -m 600 -o root -g root ~/certs-upload/*.key /srv/proxy/certs/
 sudo chown 101000:101000 /srv/proxy/certs/*.key
@@ -357,29 +456,45 @@ cannot read its keys and does not start.
 
 ### 5.3 Validate the proxy configuration
 
+Two checks before the first start; neither changes or starts anything. They
+catch a broken configuration while you still know what you just changed,
+instead of a proxy that keeps restarting.
+
 On the **workstation**, from the repository root (the paths are relative).
-The Caddyfile imports the basic-auth file from `/config`, which only exists
-on the host; an empty placeholder is enough for the syntax check:
+The Caddyfile imports the basic-auth file `/config/ldap-ui.auth`, which only
+exists on the host (5.4); an empty placeholder is enough for the syntax check:
 
 ```
+# workstation
 cd ~/Test-Projekt
 touch /tmp/ldap-ui.auth
-podman run --rm -v ./proxy/Caddyfile:/etc/caddy/Caddyfile:ro,Z \
-  -v ~/lab-pki/issued:/certs:ro,Z -v /tmp/ldap-ui.auth:/config/ldap-ui.auth:ro,Z \
-  docker.io/library/caddy:2.11.4-alpine caddy validate --config /etc/caddy/Caddyfile
+docker run --rm \
+  -v "$PWD/proxy/Caddyfile:/etc/caddy/Caddyfile:ro,Z" \
+  -v ~/lab-pki/issued:/certs:ro,Z \
+  -v /tmp/ldap-ui.auth:/config/ldap-ui.auth:ro,Z \
+  docker.io/library/caddy:2.11.4-alpine \
+  caddy validate --config /etc/caddy/Caddyfile
 rm /tmp/ldap-ui.auth
 ```
 
-Expected last line: `Valid configuration`. `docker` works the same way;
-with Podman on an SELinux system, `:Z` relabels the mounted paths for the
-container — including `~/lab-pki/issued`, which stays readable for you.
+Prefix `sudo` if your user is not in the `docker` group; with Podman, write
+`podman` instead of `docker`. `:Z` relabels the mounted paths for SELinux
+(Fedora and relatives; ignored elsewhere) — `~/lab-pki/issued` stays readable
+for you.
+
+Expected last line: `Valid configuration`. Two warnings on the way are
+normal: `Import file is empty` (the placeholder) and `Caddyfile input is not
+formatted` (cosmetic).
 
 On the **host**:
 
 ```
+# host
 cd ~/Test-Projekt
 sudo docker compose -f proxy/compose.yaml config --quiet && echo OK
 ```
+
+Expected: `OK`.
 
 ### 5.4 Basic-auth gate in front of the lldap UI (on the host)
 
@@ -389,6 +504,7 @@ this file, so create it **before** the first start. Pick a username and a new
 password (a different secret from the lldap admin password):
 
 ```
+# host
 sudo docker run --rm -it caddy:2.11.4-alpine caddy hash-password   # password twice, prints a bcrypt hash
 sudoedit /srv/proxy/config/ldap-ui.auth                            # one line: <username> <bcrypt-hash>
 sudo chown 101000:101000 /srv/proxy/config/ldap-ui.auth
@@ -396,12 +512,30 @@ sudo chmod 640 /srv/proxy/config/ldap-ui.auth
 sudo ls -ln /srv/proxy/config/                                     # -rw-r----- 101000 101000 ldap-ui.auth
 ```
 
+In `sudoedit` (nano): paste the line, save with Ctrl+O and Enter, leave with
+Ctrl+X — leaving without saving ends in `ldap-ui.auth unchanged`.
+
+At the gate you later sign in with `<username>` and the **password you typed**
+into `hash-password` — the hash only goes into the file. Caddy hashes what you
+type and compares; the hash itself, typed as a password, never matches. That
+is the point of storing a hash: whoever reads the file still cannot sign in.
+
 The hash is printed to the terminal — do not paste it into tickets, chats or
 logs; with a weak password a bcrypt hash can be cracked offline.
+
+Password forgotten: hash a new one, replace the line with `sudoedit`, then
+restart Caddy — it reads the file only at start-up, and its admin endpoint
+is disabled, so there is no reload:
+
+```
+# host
+cd ~/Test-Projekt && sudo docker compose -f proxy/compose.yaml restart
+```
 
 ### 5.5 Start the proxy (on the host)
 
 ```
+# host
 cd ~/Test-Projekt
 sudo docker compose -f proxy/compose.yaml up -d
 sudo docker logs caddy 2>&1 | tail
@@ -422,10 +556,11 @@ requires TLS` and the same for HTTP/3 on port 80 (port 80 only redirects).
 From the repository root (`pki/ca.crt` is a relative path):
 
 ```
+# workstation
 cd ~/Test-Projekt
 for h in git wiki pm ldap; do
-  curl -sS --cacert pki/ca.crt "https://$h.lab.test/" \
-    -o /dev/null -w "$h http=%{http_code} tls_verify=%{ssl_verify_result} ip=%{remote_ip}\n"
+  curl -sS --cacert pki/ca.crt "https://$h.lab.test/" -o /dev/null \
+    -w "$h http=%{http_code} tls_verify=%{ssl_verify_result} ip=%{remote_ip}\n"
 done
 curl -sS -o /dev/null -w '%{http_code} -> %{redirect_url}\n' http://git.lab.test/
 ```
@@ -438,13 +573,16 @@ basic-auth gate answers before the backend is asked); port 80 answers
 `server: Caddy` and none of the security headers — known, see
 [P-023](problems.md#p-023--the-lldap-gates-401-carries-none-of-the-proxys-security-headers).
 
-In the browser, `https://git.lab.test` must show an error page from the
-server (Firefox: "Looks like there's a problem with this site") — **not** a
-certificate warning ("Potential Security Risk Ahead").
+In the browser, `https://git.lab.test` must show an error page **from the
+server** — Firefox: "Looks like there's a problem with this site"; Chrome,
+Brave: "This page isn't working … HTTP ERROR 502". A **certificate warning**
+("Potential Security Risk Ahead", "Your connection is not private") means the
+browser does not trust your CA yet — back to 2.5.
 
 ### 5.7 lldap — first start (on the host)
 
 ```
+# host
 cd ~/Test-Projekt/services/lldap
 install -m 600 /dev/null .env && printf 'LLDAP_JWT_SECRET=%s\nLLDAP_KEY_SEED=%s\nLLDAP_LDAP_USER_PASS=%s\n' \
   "$(openssl rand -base64 32)" "$(openssl rand -base64 32)" "$(openssl rand -base64 24)" > .env
@@ -472,40 +610,45 @@ Delete the site data for `ldap.lab.test` or use a private window.
 
 ### 5.8 lldap — directory set-up
 
-Sign in at `https://ldap.lab.test`: first the basic-auth gate (5.4), then
-lldap as `admin` with `LLDAP_LDAP_USER_PASS`. Generate the passwords on the
-host:
+1. **Generate the service-account passwords** — the loop only prints them,
+   nothing is stored; put each into the password manager:
 
-```
-for s in gitlab xwiki openproject; do echo "svc-$s $(openssl rand -base64 24)"; done
-```
+   ```
+   # host
+   for s in gitlab xwiki openproject; do echo "svc-$s $(openssl rand -base64 24)"; done
+   ```
 
-In the UI — **Groups → Create a group**, then **Users → Create a user**;
-group membership is set on the user's page (**Add to group**):
+2. **Create groups and users.** Sign in at `https://ldap.lab.test`: first the
+   basic-auth gate (5.4), then lldap as `admin` with `LLDAP_LDAP_USER_PASS`.
+   **Groups → Create a group**, then **Users → Create a user**; group
+   membership is set on the user's page (**Add to group**):
 
-| Kind | Name | Groups | Notes |
-|---|---|---|---|
-| group | `git_user`, `wiki_user`, `pm_user` | — | one access group per service |
-| service account | `svc-gitlab`, `svc-xwiki`, `svc-openproject` | `lldap_strict_readonly` | e-mail `svc-<name>@lab.test`, password from the loop above |
-| test user | `alice` | `git_user`, `wiki_user`, `pm_user` | e-mail `alice@lab.test`, **first and last name required** (OpenProject); password: user page → *Modify password* |
-| test user | `bob` | `git_user` only | e-mail `bob@lab.test`, first and last name; password as for alice; negative test: no access to wiki and pm |
+   | Kind | Name | Groups | Notes |
+   |---|---|---|---|
+   | group | `git_user`, `wiki_user`, `pm_user` | — | one access group per service |
+   | service account | `svc-gitlab`, `svc-xwiki`, `svc-openproject` | `lldap_strict_readonly` | e-mail `svc-<name>@lab.test`; set the password **generated in step 1** |
+   | test user | `alice` | `git_user`, `wiki_user`, `pm_user` | e-mail `alice@lab.test`, **first and last name required** (OpenProject); password: user page → *Modify password* |
+   | test user | `bob` | `git_user` only | e-mail `bob@lab.test`, first and last name; password as for alice; negative test: no access to wiki and pm |
 
-The service-account names must be exactly as above — every bind DN in the
-services uses them (`uid=svc-xwiki,…` and so on).
+   The service-account names must be exactly as above — every bind DN in the
+   services uses them (`uid=svc-xwiki,…` and so on).
 
-Check that a service account can bind **and** see the directory — an account
-without `lldap_strict_readonly` binds successfully but every search returns
-nothing, which later shows up as "no users found" in the services:
+3. **Check that a service account can bind and see the directory** — do not
+   skip this: an account without `lldap_strict_readonly` binds successfully
+   but every search returns nothing, which later shows up as "no users found"
+   in the services:
 
-```
-sudo docker run --rm -it --network edge alpine sh -c 'apk add -q openldap-clients && \
-  ldapsearch -x -H ldap://lldap:3890 -D uid=svc-gitlab,ou=people,dc=lab,dc=test -W \
-  -b ou=groups,dc=lab,dc=test "(cn=git_user)" member'
-```
+   ```
+   # host
+   sudo docker run --rm -it --network edge alpine sh -c 'apk add -q openldap-clients && \
+     ldapsearch -x -H ldap://lldap:3890 -D uid=svc-gitlab,ou=people,dc=lab,dc=test -W \
+     -b ou=groups,dc=lab,dc=test "(cn=git_user)" member'
+   ```
 
-`-W` prompts for the `svc-gitlab` password. Expected: `dn: cn=git_user,…`,
-one `member:` line per test user, `result: 0 Success`. Container checks:
-[`services/lldap/README.md`](../services/lldap/README.md#verification).
+   `-W` prompts for the `svc-gitlab` password. Expected: `dn: cn=git_user,…`,
+   one `member:` line per test user (alice and bob), `result: 0 Success`.
+   Container checks:
+   [`services/lldap/README.md`](../services/lldap/README.md#verification).
 
 ### 5.9 GitLab — first start (on the host)
 
@@ -513,6 +656,7 @@ GitLab calls itself through Caddy and must trust **your** CA, so the first
 line copies the `ca.crt` from 5.2 into its trust directory:
 
 ```
+# host
 sudo install -o 100000 -g 100000 -m 644 /srv/proxy/certs/ca.crt /srv/gitlab/config/trusted-certs/ca.crt
 cd ~/Test-Projekt/services/gitlab
 read -rsp 'svc-gitlab password: ' PW; echo
@@ -521,30 +665,34 @@ sudo docker compose config --quiet
 sudo docker compose up -d
 ```
 
-`.env` holds one value: the `svc-gitlab` password from 5.8. Without it
-`compose config` stops with `required variable GITLAB_LDAP_BIND_PASSWORD is
-missing a value` — an empty value triggers the same error. `read -rsp`
-reads the password without echo and keeps it out of the shell history.
+`.env` holds one value: the `svc-gitlab` password from 5.8 — the same one you
+set in the lldap UI, because GitLab binds with it. Without it `compose
+config` stops with `required variable GITLAB_LDAP_BIND_PASSWORD is missing a
+value` — an empty value triggers the same error. `read -rsp` reads the
+password without echo and keeps it out of the shell history.
 
-The first start takes several minutes and the log is a flood of JSON lines
-(Sidekiq cron jobs; `DEBUG … Cannot obtain an exclusive lease` is normal).
-Instead of following it, check for the end of the configuration run and the
-health status:
+The image pull takes a few minutes (about 3.5 on the reference build), the
+first start several more, and the log is a flood of JSON lines (Sidekiq cron
+jobs; `DEBUG … Cannot obtain an exclusive lease` is normal). Instead of
+following it, check for the end of the configuration run and the health
+status:
 
 ```
+# host
 sudo docker logs gitlab 2>&1 | grep -m1 'gitlab Reconfigured'
 sudo docker ps
 ```
 
 Expected: `gitlab Reconfigured!`, then `gitlab … (healthy)`. Healthy can take
-well over five minutes on the first start; repeat `docker ps` until it
-appears. If you do follow the log with `docker logs -f`, leave it with
-`Ctrl+C` — the container keeps running. After a later restart the old
-`Reconfigured` line is still in the log; add `--since 10m` to `docker logs`.
+several minutes on the first start; repeat `docker ps` until it appears. If
+you do follow the log with `docker logs -f`, leave it with `Ctrl+C` — the
+container keeps running. After a later restart the old `Reconfigured` line is
+still in the log; add `--since 10m` to `docker logs`.
 
 Once GitLab is healthy, the self-call through Caddy proves the CA:
 
 ```
+# host
 sudo docker exec gitlab curl -sS -o /dev/null -w '%{http_code}\n' https://git.lab.test/users/sign_in
 ```
 
@@ -557,9 +705,11 @@ answers `502` for a minute while it restarts its web processes.
 
 ### 5.10 GitLab — root account
 
-Read the generated password (the file is deleted after 24 h):
+Have a TOTP app ready (5.11 needs it). Read the generated password (the file
+is deleted after 24 h):
 
 ```
+# host
 sudo grep -v '^#' /srv/gitlab/config/initial_root_password | grep -v '^$'
 ```
 
@@ -577,6 +727,7 @@ new one from the host — GitLab stores only a hash, so there is nothing to
 read back:
 
 ```
+# host
 sudo docker exec -it gitlab gitlab-rake "gitlab:password:reset[root]"
 ```
 
@@ -603,27 +754,33 @@ manager. From now on the admin area asks again for password and TOTP code
 Check from the workstation, in the repository root, that sign-up is closed:
 
 ```
+# workstation
 cd ~/Test-Projekt
 curl -s --cacert pki/ca.crt -o /dev/null -w '%{http_code}\n' https://git.lab.test/users/sign_up
 ```
 
-Expected: `302` (redirect to the sign-in page). `000` means curl rejected the
-certificate — `--cacert` missing or the wrong CA. `200` means the sign-up form
+Expected: `302` (redirect to the sign-in page). `200` means the sign-up form
 is still served: the setting can take a minute to apply — repeat once, then
-check the section again.
+check the section again. `000` means curl got no answer it accepted:
+`--cacert` missing or the wrong CA, a name that does not resolve (2.6), or a
+broken URL — a space inside it makes two URLs, and curl prints `000` twice.
 
-### 5.12 GitLab — LDAP sign-in
+### 5.12 GitLab — LDAP sign-in, clone and push
 
 In a private window, tab **LDAP**: `alice` and `bob` both get in (both are in
 `git_user`). An account outside `git_user` — e.g. `svc-openproject` — must be
 refused: that proves the group filter
 ([`compose.yaml`](../services/gitlab/compose.yaml), `user_filter`).
 
-Clone and push over HTTPS (workstation). As `root`: create a private project
-`clone-test` with a README; Edit profile → Personal access tokens → *Legacy
-token*, scopes `read_repository` and `write_repository`, short expiry. Then:
+A clone and a push over HTTPS prove the write path end to end: Git on the
+workstation trusts your CA, a token authenticates (password authentication
+for Git is off since 5.11), and GitLab accepts the change. As `root`: create
+a private project `clone-test` with a README; Edit profile → Personal access
+tokens → *Legacy token*, scopes `read_repository` and `write_repository`,
+short expiry. GitLab shows the token only once. Then:
 
 ```
+# workstation
 git -c http.sslCAInfo=$HOME/Test-Projekt/pki/ca.crt clone https://git.lab.test/root/clone-test.git ~/clone-test
 cd ~/clone-test
 git config http.sslCAInfo $HOME/Test-Projekt/pki/ca.crt
@@ -632,14 +789,20 @@ echo "push-test $(date -I)" >> README.md && git commit -am "push test" && git pu
 
 Username `root`, password the token. Paste it with Ctrl+Shift+V — the input
 is invisible, and Ctrl+V in a terminal pastes nothing, which ends in `HTTP
-Basic: Access denied`. `$HOME` instead of `~`: the shell does not expand a
-tilde after `=`. Expected at the end: `main -> main`. SSH on port 2222
-(*not re-verified*):
+Basic: Access denied`. Expected at the end: `main -> main`.
+
+`http.sslCAInfo` tells Git which CA to trust — it answers "is this really
+git.lab.test?", not "who are you?" (that is the token). It **replaces** Git's
+list of trusted CAs, so it is set for this repository only (`.git/config`);
+set with `--global`, every clone from a public host such as GitHub would fail
+the certificate check. `$HOME` instead of `~`: the shell does not expand a
+tilde after `=`. SSH on port 2222 (*not re-verified*):
 [`services/gitlab/README.md`](../services/gitlab/README.md#workstation-access-to-git).
 
 ### 5.13 OpenProject (on the host)
 
 ```
+# host
 cd ~/Test-Projekt/services/openproject
 install -m 600 /dev/null .env && printf 'OPENPROJECT_DB_PASSWORD=%s\nOPENPROJECT_SECRET_KEY_BASE=%s\n' \
   "$(openssl rand -hex 24)" "$(openssl rand -hex 64)" > .env
@@ -653,23 +816,57 @@ does not appear at all. Expected after a few minutes: `seeder` `Exited (0)`,
 the images first (about three minutes on the reference build).
 
 At `https://pm.lab.test` sign in as `admin` / `admin`; OpenProject forces a
-new password. The LDAP form is under Administration → Authentication →
-**LDAP connections** → *New LDAP connection*
-(`/admin/ldap_auth_sources/new`). Values:
-[`services/openproject/README.md`](../services/openproject/README.md#after-the-first-sign-in-admin),
-step 5. The bind password of `svc-openproject` goes into this form, not into
-`.env`. **Check the port: `3890`**, not the LDAP default `389` — with the
-wrong port OpenProject logs every attempt only as `Failed login … invalid
-credentials`, not as a connection error. To read back what was saved
-(without the password):
+new password. Then, as `admin`, in this order (OpenProject 16.6 menu names):
 
-```
-sudo docker exec openproject-db psql -U openproject -d openproject -x \
-  -c "select host, port, account, base_dn, filter_string, onthefly_register, attr_login from ldap_auth_sources;"
-```
+1. **Close self-registration:** Administration → Authentication → **Login and
+   registration** → *Self-registration*: **Disabled**, save.
+2. **Host name:** Administration → System settings → General shows *Host name*
+   `pm.lab.test`. HTTPS and the host name come from `compose.yaml`
+   (`OPENPROJECT_HTTPS`, `OPENPROJECT_HOST__NAME`), so the field may be
+   greyed out, and there is no *Protocol* field.
+3. **Project defaults:** Administration → Projects → New project: untick
+   *New projects are public by default*; *Default enabled modules*: **Wiki
+   off**, **GitLab on** ([ADR-0003](adr/0003-project-management-tool.md),
+   [`integration.md`](integration.md)), save. The defaults apply only to
+   projects created later: open each of the two demo projects the seeder
+   created → Project settings → Modules → untick *Wiki*, save
+   ([P-022](problems.md#p-022--the-second-seeded-openproject-project-kept-the-wiki-module)).
+   Check:
 
-Expected: `host | lldap`, `port | 3890`, `onthefly_register | t` (automatic
-user creation on), the other values as in the README.
+   ```
+   # host
+   sudo docker exec openproject-db psql -U openproject -d openproject \
+     -c "select p.identifier, em.name from enabled_modules em join projects p on p.id=em.project_id where em.name='wiki';"
+   ```
+
+   Expected: `(0 rows)`.
+4. **LDAP:** Administration → Authentication → **LDAP connections** → *New
+   LDAP connection* (`/admin/ldap_auth_sources/new`):
+
+   | Field | Value |
+   |---|---|
+   | Name | `lldap` |
+   | Host / Port | `lldap` / **`3890`** — not the LDAP default `389` |
+   | Connection encryption | none (internal Docker network, [ADR-0006](adr/0006-identity.md)) |
+   | Account | `uid=svc-openproject,ou=people,dc=lab,dc=test` |
+   | Password | the `svc-openproject` password from 5.8 (it goes into this form, not into `.env`) |
+   | Base DN | `ou=people,dc=lab,dc=test` |
+   | Filter | `(memberof=cn=pm_user,ou=groups,dc=lab,dc=test)` |
+   | Attributes: login / first name / last name / e-mail | `uid` / `givenName` / `sn` / `mail` |
+   | Automatic user creation | on |
+
+   With the wrong port OpenProject logs every attempt only as `Failed login …
+   invalid credentials`, not as a connection error. Read back what was saved
+   (without the password):
+
+   ```
+   # host
+   sudo docker exec openproject-db psql -U openproject -d openproject -x \
+     -c "select host, port, account, base_dn, filter_string, onthefly_register, attr_login from ldap_auth_sources;"
+   ```
+
+   Expected: `host | lldap`, `port | 3890`, `onthefly_register | t` (automatic
+   user creation on), the other values as in the table.
 
 Then, in a private window: `alice` gets in (user created automatically),
 `bob` is refused (not in `pm_user`).
@@ -678,21 +875,27 @@ OpenProject trusts your CA for its outbound calls (needed for the
 integrations) — expected `200`:
 
 ```
+# host
 sudo docker exec openproject ruby -rnet/http -e 'puts Net::HTTP.get_response(URI("https://git.lab.test/users/sign_in")).code'
 ```
 
 `certificate verify failed` means `pki/ca.crt` on the host is not your CA
 (5.2); after fixing it, `sudo docker compose restart web worker`.
 
-### 5.14 XWiki — first start (on the host)
+### 5.14 XWiki — first start and hardening (on the host)
 
-The JVM must trust **your** CA, as GitLab in 5.9: the command mounts
-`/srv/proxy/certs/ca.crt` from 5.2 (after 5.2 the clone's `pki/ca.crt` is the
-same file).
+The JVM keeps its own list of trusted CAs (`cacerts`) and ignores the
+system's, so it must learn **your** CA, as GitLab in 5.9. A throw-away
+container adds the CA from 5.2 to the image's `cacerts` and writes the result
+to `/srv/xwiki/cacerts`, which `compose.yaml` mounts into XWiki. Run `sudo -v`
+first: two `sudo` in one pipe would otherwise both ask for the password at
+once.
 
 ```
+# host
 cd ~/Test-Projekt/services/xwiki
 install -m 600 /dev/null .env && printf 'XWIKI_DB_PASSWORD=%s\n' "$(openssl rand -hex 24)" > .env
+sudo -v
 sudo docker run --rm -v /srv/proxy/certs/ca.crt:/ca.crt:ro --entrypoint sh xwiki:17.10.13-postgres-tomcat \
   -c 'keytool -importcert -noprompt -cacerts -storepass changeit -alias lab-test-root-ca -file /ca.crt >&2 && cat "$JAVA_HOME/lib/security/cacerts"' \
   | sudo tee /srv/xwiki/cacerts > /dev/null && sudo chmod 644 /srv/xwiki/cacerts && ls -l /srv/xwiki/cacerts
@@ -702,13 +905,26 @@ sudo docker compose config --quiet && sudo docker compose up -d
 Expected: `Certificate was added to keystore`, then `/srv/xwiki/cacerts`
 owned by root, mode 644; `xwiki-db` healthy, `xwiki` started. Line by line:
 [`services/xwiki/README.md`](../services/xwiki/README.md#first-start).
-At `https://wiki.lab.test` the wizard creates the `admin` account and
-installs the *XWiki Standard Flavor* (several minutes). Run it right after
-the start: until the wizard has run, anyone who reaches `wiki.lab.test` can
-create that admin account. Registration and anonymous reading stay open
-until the hardening step
-([`services/xwiki/README.md`](../services/xwiki/README.md#after-the-wizard-admin)
-step 1; OpenProject: its README, step 2).
+
+**Right after the start**, open `https://wiki.lab.test`: the wizard creates
+the `admin` account and installs the *XWiki Standard Flavor* (several
+minutes). Until the wizard has run, anyone who reaches `wiki.lab.test` can
+create that admin account.
+
+Then close registration and anonymous reading, as `admin`: Administer Wiki →
+Users & Rights → Rights → tab **Users** → row *Unregistered Users*: click
+**Register** until it shows ✗ (it cycles empty → ✓ → ✗); tick *Prevent
+unregistered users from viewing pages* and *… from editing pages*. On the
+*Registration* page set who may create accounts to *Closed* if offered. Check,
+without being signed in:
+
+```
+# workstation
+cd ~/Test-Projekt
+for p in /bin/register/XWiki/XWikiRegister /bin/view/Main/; do curl -s --cacert pki/ca.crt -o /dev/null -w "$p %{http_code} %{redirect_url}\n" "https://wiki.lab.test$p"; done
+```
+
+Expected for both: `302` to `…/bin/login/XWiki/XWikiLogin…`.
 
 ### 5.15 XWiki — LDAP
 
@@ -718,10 +934,13 @@ step 2 — but **fill the form before activating the authenticator**. Once the
 `xwiki.cfg` line is active, every sign-in goes through LDAP first; with an
 empty form (or no form at all) even `admin` is locked out.
 
-1. **Extensions** (Administration → Extensions): `LDAP Authenticator`
-   (`org.xwiki.contrib.ldap:ldap-authenticator`) and, via *Advanced search*
-   by id, `org.xwiki.contrib.ldap:ldap-ui` — both in version **9.16.6** (the
-   tested pair). Check under *Installed extensions* that both are listed.
+1. **Extensions** (Administration → Extensions), both in version **9.16.6**
+   (the tested pair): *LDAP Authenticator*
+   (`org.xwiki.contrib.ldap:ldap-authenticator`, the sign-in logic) and *LDAP
+   Application* (`org.xwiki.contrib.ldap:ldap-ui`, the admin form). The
+   second one may not show up in the default search — use *Advanced search*
+   with the id. Check under *Installed extensions* that **both** are listed;
+   a success message alone is not proof.
 2. **Form** (`/bin/admin/XWiki/XWikiPreferences?section=LDAP`). The page
    says "LDAP authentication is not enabled" — expected at this point; the
    form below it must be visible, otherwise `ldap-ui` is missing. The form's
@@ -741,14 +960,22 @@ empty form (or no form at all) even `admin` is locked out.
    | Ldap user fields mapping | three entries: `first_name` → `givenName`, `last_name` → `sn`, `email` → `mail` |
 
    Leave the rest empty or at its default. Save, reload, check the values.
-3. **Activate** (on the host, in `~/Test-Projekt/services/xwiki`):
+3. **Activate.** There is no switch in the UI for this version: one line in
+   `xwiki.cfg` selects the authenticator. The container's entrypoint copies a
+   `xwiki.cfg` from the data directory into place on every start, so the edit
+   survives restarts and is part of the backup:
 
    ```
+   # host
+   cd ~/Test-Projekt/services/xwiki
    sudo docker cp xwiki:/usr/local/tomcat/webapps/ROOT/WEB-INF/xwiki.cfg /srv/xwiki/data/data/xwiki.cfg
    echo 'xwiki.authentication.authclass=org.xwiki.contrib.ldap.XWikiLDAPAuthServiceImpl' | sudo tee -a /srv/xwiki/data/data/xwiki.cfg
    sudo chown 100000:100000 /srv/xwiki/data/data/xwiki.cfg && sudo chmod 640 /srv/xwiki/data/data/xwiki.cfg
    sudo docker compose restart xwiki
    ```
+
+   `restart` returns while XWiki is still starting; wait for `(healthy)` in
+   `sudo docker ps` (about a minute).
 
 Test in a private window: `alice` gets in, `bob` is refused, `admin` still
 works. Right after the sign-in alice may see "You are not allowed to view
@@ -768,6 +995,7 @@ DEBUG for the LDAP module, without needing a working admin sign-in (lasts
 until the container is recreated):
 
 ```
+# host
 cd ~/Test-Projekt/services/xwiki
 sudo docker exec xwiki sed -i 's|</configuration>|<logger name="org.xwiki.contrib.ldap" level="debug"/></configuration>|' /usr/local/tomcat/webapps/ROOT/WEB-INF/classes/logback.xml
 sudo docker compose restart xwiki
@@ -777,24 +1005,60 @@ Way back if everyone is locked out: remove the line and restart — the form
 values are kept.
 
 ```
+# host
 cd ~/Test-Projekt/services/xwiki
 sudo sed -i '/^xwiki.authentication.authclass=org.xwiki.contrib.ldap/d' /srv/xwiki/data/data/xwiki.cfg
 sudo docker compose restart xwiki
 ```
 
+### 5.16 Test the backup key
+
+Now that every stack has its `.env`, run one backup by hand and decrypt it on
+the workstation — this proves the key from 4.1:
+
+```
+# host
+sudo systemctl start backup.service
+sudo journalctl -u backup.service --since '-10 min' --no-pager | tail -5
+ls -l /srv/backups/
+```
+
+`backup.service` is a one-shot unit: `systemctl start` returns only when the
+backup is finished — about one and a half minutes without any output, while
+the stacks pause briefly. To watch it, run `systemctl status backup.service`
+in a second terminal. Expected: `==> done` in the journal, and in
+`/srv/backups/` one file `<stamp>.tar.age` (e.g. `20261019T162135Z.tar.age`),
+`-rw-r----- root backup`. A **directory** `<stamp>/` next to it means
+encryption failed and the set lies there unencrypted — fix the cause (4.1),
+then `sudo rm -rf /srv/backups/<stamp>`.
+
+Fetch and decrypt — replace both `<stamp>` with the name `ls` printed:
+
+```
+# workstation
+scp lab:/srv/backups/<stamp>.tar.age . && age -d -i ~/lab-pki/backup-identity.txt <stamp>.tar.age | tar -t
+```
+
+The admin may read the file because `bootstrap.sh` put it into the group
+`backup`. `tar -t` lists the set without unpacking it. Expected:
+`<stamp>/env/` (one `.env` per stack), `<stamp>/gitlab/` (including
+`gitlab-secrets.json`), `<stamp>/lldap/`, `<stamp>/openproject/`,
+`<stamp>/proxy/`, `<stamp>/xwiki/`, `manifest.txt`, `SHA256SUMS`. `no
+identity matched any of the recipients` means the host still encrypts to
+another key (4.1). The downloaded file holds every secret of the
+installation — delete it when the test is done. Restore:
+[`docs/backup-restore.md`](backup-restore.md).
+
 ## 6–8. Not yet written
 
-At this point all services run and accept LDAP sign-in with group filtering.
-Still to be added to this guide (until then, see the linked READMEs):
+At this point all services run, accept LDAP sign-in with group filtering,
+and the backup can be decrypted. Still to be added to this guide (until
+then, see the linked documents):
 
-- Hardening of OpenProject (self-registration, host name, public projects,
-  wiki module — [`services/openproject/README.md`](../services/openproject/README.md#after-the-first-sign-in-admin)
-  steps 2–4) and XWiki (registration and anonymous reading —
-  [`services/xwiki/README.md`](../services/xwiki/README.md#after-the-wizard-admin) step 1).
 - Integrations GitLab ↔ OpenProject ([`docs/integration.md`](integration.md)).
-- Acceptance checks across all services, the verification blocks of each
-  README (including GitLab's self-call through Caddy and SSH on 2222), and a
-  first backup and restore test ([`docs/backup-restore.md`](backup-restore.md)).
+- Acceptance checks across all services and the verification blocks of each
+  README (including SSH on 2222).
+- A restore test ([`docs/backup-restore.md`](backup-restore.md)).
 
 ## 9. Access from another workstation
 
