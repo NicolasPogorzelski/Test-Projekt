@@ -27,7 +27,9 @@ set -euo pipefail
 # gitlab-backup is consistent on its own. An EXIT trap restarts whatever this
 # script stopped, also after a failure. The set is written as <name>.partial and
 # renamed last, so prune and restore.sh never mistake a half-written set for a
-# complete one. Plaintext exists only while this script runs (root:backup 0750/0640).
+# complete one. Plaintext exists only while this script runs: the recipients are
+# tested before anything is stopped, and if a later step fails, the trap removes
+# the group-readable plaintext set (a root-only <name>.partial stays for inspection).
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SRV=/srv
@@ -71,9 +73,14 @@ start_stopped() {
 cleanup() {
     local rc=$?
     start_stopped || printf 'error: a stopped service did not start again - check docker compose ps\n' >&2
-    if ((rc != 0)) && [[ -d "$WORK" ]]; then
-        printf 'error: backup failed (exit %d), %s left for inspection\n' "$rc" "$WORK" >&2
+    ((rc != 0)) || return 0
+    if [[ -d "$WORK" ]]; then
+        # still root-only (700): kept, so the failed step can be inspected
+        printf 'error: backup failed (exit %d), %s left for inspection (root only)\n' "$rc" "$WORK" >&2
     fi
+    # after finalize() the set is readable for group backup - never leave it unencrypted
+    rm -rf "${SET:?}" "$SET.tar.age.partial"
+    printf 'error: backup failed (exit %d), no unencrypted set left in %s\n' "$rc" "$BACKUP_ROOT" >&2
 }
 trap cleanup EXIT
 
@@ -95,6 +102,8 @@ check_preconditions() {
     getent group "$BACKUP_GROUP" >/dev/null || die "group $BACKUP_GROUP does not exist"
     command -v age >/dev/null || die "age not installed - run bootstrap.sh"
     [[ -s "$RECIPIENTS" ]] || die "no age recipients in $RECIPIENTS"
+    # encrypt nothing once, so a malformed key fails here and not after every service was stopped
+    age -R "$RECIPIENTS" </dev/null >/dev/null || die "age cannot use $RECIPIENTS (malformed recipient?)"
     docker info >/dev/null 2>&1 || die "docker daemon not reachable"
     local s
     for s in gitlab lldap openproject xwiki; do

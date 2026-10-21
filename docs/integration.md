@@ -27,7 +27,8 @@ filter, not the password, is the gate.
 
 ### OpenProject
 Configured in the admin UI (Administration → Authentication → LDAP
-authentication, `/admin/ldap_auth_sources`): host `lldap`, port 3890, no
+connections — "LDAP authentication" before OpenProject 16 —
+`/admin/ldap_auth_sources`): host `lldap`, port 3890, no
 encryption (internal network), system account
 `uid=svc-openproject,ou=people,dc=lab,dc=test`, base `ou=people,dc=lab,dc=test`,
 filter `(memberof=cn=pm_user,ou=groups,dc=lab,dc=test)`, automatic user

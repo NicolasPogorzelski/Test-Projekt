@@ -9,7 +9,7 @@ from the admin account and refuse anything else.
 One run of `backup.sh` produces one *set*, first as a directory
 `/srv/backups/<UTC stamp>/`, then packed and encrypted with `age` into
 `/srv/backups/<UTC stamp>.tar.age`; the plaintext directory is removed once the
-archive exists. Contents of a set:
+archive exists, and also when a run fails. Contents of a set:
 
 | Path in the set | Source on the host | How | Why this way |
 |---|---|---|---|
@@ -22,19 +22,23 @@ archive exists. Contents of a set:
 | `xwiki/data.tar.gz` | `/srv/xwiki/data` | tar, `xwiki` stopped | configuration (`xwiki.cfg` with the LDAP line, [P-012](problems.md#p-012--xwiki-ldap-installed-configured-and-still-invalid-credentials)) and installed extensions |
 | `xwiki/cacerts` | `/srv/xwiki/cacerts` | copy | JVM trust store with the lab CA |
 | `lldap/data.tar.gz` | `/srv/lldap` | tar, `lldap` stopped | SQLite: safe only without a writer |
-| `proxy/certs.tar.gz`, `proxy/config.tar.gz`, `proxy/data.tar.gz` | `/srv/proxy/*` | tar, Caddy keeps running | static files: leaf certificates and keys, `ldap-ui.auth`, Caddy state |
+| `proxy/certs.tar.gz`, `proxy/config.tar.gz`, `proxy/data.tar.gz` | `/srv/proxy/*` | tar, Caddy keeps running | static files: leaf certificates and keys, the CA certificate that signed them, `ldap-ui.auth`, Caddy state |
 | `env/<stack>.env` | `services/<stack>/.env` | copy | every secret the stacks need; not in git by design |
 | `manifest.txt` | — | generated | stamp, host, repo commit, image tags per stack, GitLab archive name — what `restore.sh` checks against the checkout |
 | `SHA256SUMS` | — | `sha256sum` over every file, relative paths | `sha256sum -c` from inside the set |
 
-Not in the set, restored from the repository: [`pki/ca.crt`](../pki/ca.crt) (public CA
-certificate, also copied to `/srv/gitlab/config/trusted-certs/`). Not in the set
-at all: the PostgreSQL data directories (`*/db`, recreated from the dumps) and
-`/srv/gitlab/logs`.
+The CA certificate travels inside `proxy/certs.tar.gz`; `restore.sh` copies it
+to the clone's [`pki/ca.crt`](../pki/ca.crt) and to
+`/srv/gitlab/config/trusted-certs/`. It must not come from the repository: a
+fresh clone carries the reference build's CA, not the one that signed your
+certificates. Not in the set at all: the PostgreSQL data directories (`*/db`,
+recreated from the dumps) and `/srv/gitlab/logs`.
 
 The set contains every secret of the installation in plaintext. Therefore:
 `root:backup` with `0750/0640` while the directory exists, `age` encryption
-before anything leaves the host, and the plaintext removed in the same run.
+before anything leaves the host, and the plaintext removed in the same run —
+also when the run fails (the recipients are tested before anything is
+stopped; a later failure leaves only a root-only `<stamp>.partial`).
 The recipient (public key) is [`scripts/backup-recipients.txt`](../scripts/backup-recipients.txt); the identity
 (private key) lives in the password manager and never on the server.
 
@@ -52,8 +56,8 @@ sudo ./scripts/backup.sh
 Order inside the script (each stack: stop → dump/tar → start; an `EXIT` trap
 restarts stopped containers even after a failure):
 
-1. preconditions: root, `/srv/backups`, group `backup`, `age` and the
-   recipients file, the four `.env` files, `gitlab` healthy
+1. preconditions: root, `/srv/backups`, group `backup`, `age` and a
+   recipients file `age` accepts, the four `.env` files, `gitlab` healthy
 2. lldap — stop, tar, start (seconds)
 3. openproject — stop `web` + `worker`, `pg_dump`, tar assets, start
    (`compose start` re-runs the seeder, ~45 s, [P-013](problems.md#p-013--docker-compose-start-re-runs-the-openproject-seeder-on-every-backup))
@@ -91,18 +95,25 @@ as root) and `backup.timer` (`OnCalendar=*-*-* 03:00:00 UTC`,
 `RandomizedDelaySec=15min`, `Persistent=true` so a run missed while the host
 was down happens after boot). RPO is therefore up to 24 h. Useful commands:
 `systemctl list-timers backup.timer`, `sudo systemctl start backup.service`
-(run now), `sudo journalctl -u backup.service -n 50` (last run's log).
+(run now — returns only when the run is done, about 1.5 minutes without
+output), `sudo journalctl -u backup.service -n 50` (last run's log). First
+test of a new installation's key: [`docs/install.md`](install.md) 5.16.
 
 ## Restore procedure
 
-On a fresh host, after the README runbook steps "Host preparation" (admin
-account, SSH key, firewall) and `git clone` at the commit the set came from:
+On a fresh host, after [`docs/install.md`](install.md) sections 1 and 3
+(server, firewall, admin account, `lab` alias, git) and `git clone`. The
+image tags in the checkout must match the set — `restore.sh` refuses
+otherwise; if they were bumped since, check out the `repo_commit` from the
+set's `manifest.txt`:
 
 ```
 sudo ./scripts/bootstrap.sh                    # packages, userns-remap, /srv layout, group backup, age
 rsync -a ~/backups/<host>/<stamp>.tar.age <new host>:/tmp/   # from the workstation
-sudo install -m 640 -g backup /tmp/<stamp>.tar.age /srv/backups/
-install -m 600 /dev/null ~/age.key && $EDITOR ~/age.key      # paste the identity from the password manager
+sha256sum ~/backups/<host>/<stamp>.tar.age                   # on the workstation ...
+sha256sum /tmp/<stamp>.tar.age                               # ... and on the new host: must be equal
+sudo install -m 640 -g backup /tmp/<stamp>.tar.age /srv/backups/ && rm /tmp/<stamp>.tar.age
+install -m 600 /dev/null ~/age.key && ${EDITOR:-nano} ~/age.key   # paste the identity from the password manager
 time sudo ./scripts/restore.sh /srv/backups/<stamp>.tar.age ~/age.key
 rm ~/age.key
 ```
@@ -110,7 +121,8 @@ rm ~/age.key
 `restore.sh` refuses to continue if (1) a checksum in the set does not match,
 (2) the image tags in the manifest differ from the `compose.yaml` files of the
 checkout, or (3) any `/srv` target directory, `.env` file or stack container
-already exists. Then: host artifacts → lldap → proxy → OpenProject (db
+already exists. Then: host artifacts (`.env` files, certificates and the CA
+from the set) → lldap → proxy → OpenProject (db
 container alone, `pg_restore --no-owner -1`, assets, rest of the stack) →
 XWiki (same) → GitLab (secrets, host keys and archive in place, start,
 `gitlab-backup restore`, restart, `gitlab:check`) → machine verification
@@ -118,7 +130,8 @@ XWiki (same) → GitLab (secrets, host keys and archive in place, start,
 The decrypted set is removed at the end.
 
 After the script: update the workstation's `/etc/hosts` entry for the four
-names to the new address, then the functional checklist below. Note that
+names to the new address ([`docs/install.md`](install.md) 2.6 — exactly one
+line), then the functional checklist below. Note that
 GitLab's first start on the empty database writes a fresh
 `/srv/gitlab/config/initial_root_password`; the restore replaces the database
 afterwards, so that file is stale — `restore.sh` removes it ([P-020](problems.md#p-020--a-stale-initial_root_password-reappears-after-a-restore)).

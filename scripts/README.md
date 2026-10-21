@@ -78,15 +78,32 @@ specification either tool implements.
 
 ### What it does not do
 
-Recorded in the README runbook, because these steps are interactive or hold
-secrets: creating the admin user and its SSH key, the Hetzner cloud firewall,
-the GitHub deploy key, copying the certificates, the `.env` files.
+These steps are interactive or hold secrets, so they are in
+[`docs/install.md`](../docs/install.md) instead: creating the server, the
+provider firewall, the admin user and its SSH key, copying the certificates,
+the `.env` files, the backup key.
 
-### Lint
+## backup.sh and restore.sh
+
+Concept, set contents and the measured restore test:
+[`docs/backup-restore.md`](../docs/backup-restore.md). Two safety properties
+worth knowing before the first run:
+
+- `backup.sh` tests the `age` recipients before it stops anything, so a
+  malformed key fails at once. If any later step fails, it removes the
+  plaintext set (readable for group `backup`) and keeps only a root-only
+  `<stamp>.partial` for inspection; a finished run leaves nothing but
+  `<stamp>.tar.age`. `systemctl start backup.service` returns only when the
+  run is done (one-shot unit, about 1.5 minutes, no output).
+- `restore.sh` takes the CA that signed the restored certificates from the
+  set (`proxy/certs/ca.crt`) and writes it to the clone's `pki/ca.crt` and to
+  GitLab's `trusted-certs/` — a fresh clone carries the reference build's CA.
+
+## Lint
 
 ```
-bash -n scripts/bootstrap.sh
-shellcheck --severity=warning scripts/bootstrap.sh
+bash -n scripts/*.sh pki/*.sh
+shellcheck --severity=warning scripts/*.sh pki/*.sh
 ```
 
 The same shellcheck call runs in CI for every tracked `*.sh`.

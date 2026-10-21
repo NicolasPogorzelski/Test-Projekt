@@ -1,47 +1,47 @@
 {
-      admin off
-      servers {
-              protocols h1 h2
-      }
+	admin off
+	servers {
+		protocols h1 h2
+	}
 }
 
 (hardened) {
-      header {
-              Strict-Transport-Security "max-age=31536000"
-              X-Content-Type-Options "nosniff"
-              Referrer-Policy "strict-origin-when-cross-origin"
-              # default only (?): GitLab and OpenProject send their own; XWiki and the lldap UI send none
-              ?X-Frame-Options "SAMEORIGIN"
-              -Server
-      }
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# default only (?): GitLab and OpenProject send their own; XWiki and the lldap UI send none
+		?X-Frame-Options "SAMEORIGIN"
+		-Server
+	}
 }
 
 git.lab.test {
-      import hardened
-      tls /certs/git.lab.test.crt /certs/git.lab.test.key
-      reverse_proxy gitlab:80
+	import hardened
+	tls /certs/git.lab.test.crt /certs/git.lab.test.key
+	reverse_proxy gitlab:80
 }
 
 wiki.lab.test {
-      import hardened
-      tls /certs/wiki.lab.test.crt /certs/wiki.lab.test.key
-      reverse_proxy xwiki:8080
+	import hardened
+	tls /certs/wiki.lab.test.crt /certs/wiki.lab.test.key
+	reverse_proxy xwiki:8080
 }
 
 pm.lab.test {
-      import hardened
-      tls /certs/pm.lab.test.crt /certs/pm.lab.test.key
-      reverse_proxy openproject:8080
+	import hardened
+	tls /certs/pm.lab.test.crt /certs/pm.lab.test.key
+	reverse_proxy openproject:8080
 }
 
 ldap.lab.test {
-      import hardened
-      tls /certs/ldap.lab.test.crt /certs/ldap.lab.test.key
-      # lldap is the root of trust for every service and has no second factor:
-      # an independent credential in front of its UI (ADR-0011). The bcrypt
-      # hashes live outside the repository in /srv/proxy/config/ldap-ui.auth.
-      basic_auth {
-              import /config/ldap-ui.auth
-      }
-      reverse_proxy lldap:17170
+	import hardened
+	tls /certs/ldap.lab.test.crt /certs/ldap.lab.test.key
+	# lldap is the root of trust for every service and has no second factor:
+	# an independent credential in front of its UI (ADR-0011). The bcrypt
+	# hashes live outside the repository in /srv/proxy/config/ldap-ui.auth.
+	basic_auth {
+		import /config/ldap-ui.auth
+	}
+	reverse_proxy lldap:17170
 }

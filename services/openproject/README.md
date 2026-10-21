@@ -2,7 +2,9 @@
 
 Design: [ADR-0003](../../docs/adr/0003-project-management-tool.md) (why
 OpenProject), [ADR-0012](../../docs/adr/0012-openproject-container.md)
-(image variant, processes, database hardening).
+(image variant, processes, database hardening). First installation, step by
+step: [`docs/install.md`](../../docs/install.md) 5.13. This file is the
+reference for the stack.
 
 ## Files
 - `compose.yaml` — five definitions: `db` (PostgreSQL 17, non-root),
@@ -21,44 +23,44 @@ Created by [`scripts/bootstrap.sh`](../../scripts/bootstrap.sh). Networks `edge`
 (bootstrap); `openproject_internal` is created by this stack and is
 `internal: true` (db and cache are unreachable from anywhere else).
 
-## First start
-```
-cd ~/Test-Projekt/services/openproject
-install -m 600 /dev/null .env && printf 'OPENPROJECT_DB_PASSWORD=%s\nOPENPROJECT_SECRET_KEY_BASE=%s\n' \
-  "$(openssl rand -hex 24)" "$(openssl rand -hex 64)" > .env
-cat .env      # copy SECRET_KEY_BASE into the password manager (backup-relevant)
-sudo docker compose config --quiet && sudo docker compose up -d
-sudo docker compose logs -f seeder     # "Initialising database" … seed … exits 0 (2-4 min)
-sudo docker compose ps                 # db healthy, cache up, seeder Exited (0), web (healthy) after ~1 min, worker up
-```
-Then `https://pm.lab.test` → user `admin`, password `admin` (OpenProject's
-seeded default; the first sign-in forces a password change).
+## First start, in short
+Two hex secrets in `.env` (hex because the DB password is embedded in
+`DATABASE_URL`, where `/` or `+` would break it), then `up -d`. The `seeder`
+loads the schema and exits; `sudo docker compose ps -a` shows it as
+`Exited (0)` — without `-a` it does not appear at all. `web` turns
+`(healthy)` about a minute later. First sign-in: `admin` / `admin`
+(OpenProject's seeded default), a new password is forced.
+`OPENPROJECT_SECRET_KEY_BASE` signs sessions and tokens; it is part of every
+backup.
 
-## After the first sign-in (admin)
-1. Change the admin password (forced), store it in the password manager.
-2. Administration → Users and permissions → Settings: **Self-registration:
-   disabled**.
-3. Administration → System settings → General: check *Host name*
-   `pm.lab.test`, *Protocol* HTTPS.
-4. Administration → Projects → **New project**: "New projects are public by
-   default" **off**; default modules: **Wiki off**, **GitLab on** ([ADR-0003](../../docs/adr/0003-project-management-tool.md),
-   [`docs/integration.md`](../../docs/integration.md)). Then check *every* existing project's
-   *Project settings → Modules* — the seeder creates two demo projects and
-   both start with the wiki on ([P-022](../../docs/problems.md#p-022--the-second-seeded-openproject-project-kept-the-wiki-module)). Verify:
+## After the first sign-in (admin) — what and why
+Menu names of OpenProject 16.6; the exact clicks are in
+[`docs/install.md`](../../docs/install.md) 5.13.
+
+1. **Self-registration disabled** (Administration → Authentication → Login
+   and registration): accounts come from lldap only.
+2. **Host name and HTTPS** come from `compose.yaml`
+   (`OPENPROJECT_HOST__NAME`, `OPENPROJECT_HTTPS`); System settings → General
+   only shows the host name, and there is no *Protocol* field. Set in the
+   environment, they are correct after every rebuild.
+3. **Projects private by default, Wiki module off, GitLab module on**
+   (Administration → Projects → New project) — documentation lives in XWiki,
+   code links come from GitLab ([ADR-0003](../../docs/adr/0003-project-management-tool.md),
+   [`docs/integration.md`](../../docs/integration.md)). The defaults apply only
+   to projects created later: the seeder's two demo projects must be switched
+   by hand (Project settings → Modules), or one keeps its wiki
+   ([P-022](../../docs/problems.md#p-022--the-second-seeded-openproject-project-kept-the-wiki-module)). Check:
    `select p.identifier, em.name from enabled_modules em join projects p on p.id=em.project_id where em.name='wiki';`
    must return no rows.
-5. LDAP (30-minute time-box, [ADR-0012](../../docs/adr/0012-openproject-container.md) §4): Administration → Authentication →
-   LDAP authentication → *New*:
-   - Name `lldap`, Host `lldap`, Port `3890`, Connection encryption *none*
-     (internal network, [ADR-0006](../../docs/adr/0006-identity.md))
-   - Account `uid=svc-openproject,ou=people,dc=lab,dc=test`, password of
-     `svc-openproject` from lldap
-   - Base DN `ou=people,dc=lab,dc=test`, Filter
-     `(memberof=cn=pm_user,ou=groups,dc=lab,dc=test)`
-   - Attribute mapping: login `uid`, first name `givenName`, last name `sn`,
-     e-mail `mail`; **Automatic user creation** on.
-   Then add `alice` to `pm_user` in lldap and sign in as `alice`; `bob`
-   (not in `pm_user`) must be refused.
+4. **LDAP** (30-minute time-box, [ADR-0012](../../docs/adr/0012-openproject-container.md) §4) under
+   Authentication → **LDAP connections**: host `lldap`, port **`3890`**, no
+   encryption (internal network, [ADR-0006](../../docs/adr/0006-identity.md)), bind account
+   `uid=svc-openproject,ou=people,dc=lab,dc=test` (its password goes into this
+   form, not into `.env`), base DN `ou=people,dc=lab,dc=test`, filter
+   `(memberof=cn=pm_user,ou=groups,dc=lab,dc=test)`, attributes `uid` /
+   `givenName` / `sn` / `mail`, automatic user creation on. A wrong port shows
+   up only as `Failed login … invalid credentials`, not as a connection error.
+   `alice` (in `pm_user`) gets in, `bob` is refused.
 
 ## Verification (evidence for docs/security.md)
 ```
@@ -66,8 +68,8 @@ seeded default; the first sign-in forces a password change).
 sudo docker inspect --format '{{.Name}} user={{.Config.User}} capdrop={{.HostConfig.CapDrop}} ro={{.HostConfig.ReadonlyRootfs}}' openproject openproject-worker openproject-db openproject-cache
 sudo docker exec openproject id -u                                  # 1000
 sudo docker exec openproject-cache id -u                            # not 0 (image user), otherwise add user:
-# health, seeder exit code
-sudo docker compose ps
+# health, seeder exit code (-a: the seeder has exited)
+sudo docker compose ps -a
 # only through Caddy: HTTPS 302/200 with the hardened headers, no direct port  [no ports published]
 curl -sI https://pm.lab.test/ | grep -Ei '^(HTTP|strict-transport|x-content-type|referrer-policy|server:)'
 sudo docker port openproject

@@ -2,7 +2,9 @@
 
 Design: [ADR-0004](../../docs/adr/0004-git-server.md) (why GitLab),
 [ADR-0010](../../docs/adr/0010-gitlab-container.md) (container configuration,
-hardening, resources).
+hardening, resources). First installation, step by step:
+[`docs/install.md`](../../docs/install.md) 5.9–5.12. This file is the
+reference for the stack.
 
 ## Files
 - `compose.yaml` — one container; the whole Omnibus configuration is the
@@ -19,55 +21,49 @@ hardening, resources).
 `100000` = container root under `userns-remap` ([ADR-0002](../../docs/adr/0002-os-and-docker.md)); Omnibus chowns the
 per-service subdirectories to its own users (`git`, `gitlab-psql`, …), which
 land at 100000 + UID on the host. Created by [`scripts/bootstrap.sh`](../../scripts/bootstrap.sh).
-[`pki/ca.crt`](../../pki/ca.crt) is copied into `trusted-certs/` with that owner (first-start step
-below). It is not bind-mounted: `reconfigure` sets owner and mode on every file
+Your CA (`/srv/proxy/certs/ca.crt`, the one the leaf certificates were signed
+with) is copied into `trusted-certs/` with that owner ([`docs/install.md`](../../docs/install.md) 5.9;
+on a restore, `restore.sh` takes it from the backup set). It is not bind-mounted: `reconfigure` sets owner and mode on every file
 in that directory, which fails on a mount ([`docs/problems.md`](../../docs/problems.md) [P-010](../../docs/problems.md#p-010--gitlab-reconfigure-fails-on-a-bind-mounted-ca-certificate)).
 
 Networks `edge` (reached by Caddy) and `ldap` (reaches lldap) exist before the
 stack starts (bootstrap). The only published port is `2222` (Git over SSH);
 HTTP is reachable only through Caddy as `gitlab:80`.
 
-## First start
-```
-sudo install -o 100000 -g 100000 -m 644 ~/Test-Projekt/pki/ca.crt /srv/gitlab/config/trusted-certs/ca.crt
-cd ~/Test-Projekt/services/gitlab
-sudo docker compose config --quiet          # interpolation and schema check, no daemon needed
-sudo docker compose up -d
-sudo docker logs -f gitlab                  # "gitlab Reconfigured!" then services start; 3-5 min
-```
-Then, once `sudo docker ps` shows `(healthy)`:
+## Why the first-start settings
+The steps are in [`docs/install.md`](../../docs/install.md) 5.10–5.11; the
+reasons:
 
-1. Read the generated root password on the host — do not paste it anywhere:
-   `sudo grep -v '^#' /srv/gitlab/config/initial_root_password | grep -v '^$'`
-   (the file is deleted after 24 h). Sign in at https://git.lab.test as
-   `root`, change the password (avatar → Edit profile → Password).
-2. Admin → Settings → General (`/admin/application_settings/general`), each
-   section has its own *Save changes*:
-   - *New user account restrictions*: untick **Allow new user accounts**.
-     Minimum password length stays at the default 8: admins have enforced
-     MFA, and NIST SP 800-63B accepts 8 characters with a second factor;
-     LDAP users' passwords live in lldap, not here.
-   - *Sign-in restrictions*: untick **Allow password authentication for Git
-     over HTTP(S)** (personal access tokens only), tick **Enforce two-factor
-     authentication for administrators**, grace period `0`, tick **Enable
-     Admin Mode**. E-mail based options stay off (no mail server).
-   GitLab then forces the 2FA set-up for `root` on the next page load: TOTP
-   app, and store the recovery codes in the password manager.
-3. Create a private project (namespace `root`, initialise with a README) and
-   run the clone test below.
+- **Root password from `initial_root_password`, not from `.env`.** GitLab
+  generates it on the first start; the file is deleted after 24 h. Nothing
+  in the repository or the environment holds it ([ADR-0010](../../docs/adr/0010-gitlab-container.md)).
+- **Sign-up off** (*Allow new user accounts*): accounts come from lldap; a
+  public sign-up form would let anyone who reaches the host create one.
+- **Minimum password length stays at the default 8:** admins have enforced
+  MFA, and NIST SP 800-63B accepts 8 characters with a second factor; LDAP
+  users' passwords live in lldap, not here.
+- **No password authentication for Git over HTTP(S):** personal access tokens
+  only — scoped, expiring, revocable one by one.
+- **2FA enforced for administrators**, grace period `0`, **Admin Mode** on:
+  the admin area asks again for password and TOTP code. E-mail based options
+  stay off (no mail server).
 
-Verified 2026-09-19: sign-up closed (`/users/sign_up` → 302 to sign-in),
-HTTPS clone with a token through the private CA, SSH clone and push on 2222
-with a dedicated key; the SSH host key fingerprint shown on first connect
-matched the one printed in the container's first-start log.
+Verified 2026-09-19 and again on 2026-10-19: sign-up closed
+(`/users/sign_up` → 302 to sign-in), HTTPS clone and push with a token through
+the private CA. On 2026-09-19 also SSH clone and push on 2222 with a dedicated
+key; the SSH host key fingerprint shown on first connect matched the one
+printed in the container's first-start log.
 
 ## Workstation access to Git
-- HTTPS: git must trust the private CA; either import [`pki/ca.crt`](../../pki/ca.crt) into the
-  system store or pass it per clone:
-  `git -c http.sslCAInfo=/path/to/pki/ca.crt clone https://git.lab.test/<ns>/<project>.git`.
-  Username is the GitLab user, password is a personal access token with the
-  scopes `read_repository`/`write_repository` (password authentication for
-  Git over HTTPS is disabled).
+- HTTPS: git must trust your CA; either import it into the system store or
+  set it per repository:
+  `git -c http.sslCAInfo=$HOME/Test-Projekt/pki/ca.crt clone https://git.lab.test/<ns>/<project>.git`,
+  then `git config http.sslCAInfo $HOME/Test-Projekt/pki/ca.crt` inside the
+  clone. Not with `--global`: `http.sslCAInfo` replaces Git's list of trusted
+  CAs, so every clone from a public host would fail. Username is the GitLab
+  user, password is a personal access token with the scopes
+  `read_repository`/`write_repository` (password authentication for Git over
+  HTTPS is disabled).
 - SSH: one dedicated key per person and purpose (`ssh-keygen -t ed25519 -f
   ~/.ssh/gitlab-lab`), public key added under Edit profile → SSH Keys.
   `~/.ssh/config` block, so plain `git clone git@git.lab.test:<ns>/<project>.git`
